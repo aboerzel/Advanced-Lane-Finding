@@ -15,31 +15,24 @@ def read_images(imagepath):
     return images
 
 
-def get_cam_calibration_points(images, nx, ny):
-    objp = np.zeros((nx * ny, 3), np.float32)
-    objp[:, :2] = np.mgrid[0:nx, 0:ny].T.reshape(-1, 2)
+def camera_calibration(images, grid_size, image_size):
+    objp = np.zeros((grid_size, 3), np.float32)
+    objp[:, :2] = np.mgrid[0:grid_size[0], 0:grid_size[1]].T.reshape(-1, 2)
 
     objpoints = []  # 3d points in real world space
     imgpoints = []  # 2d points in image plane.
-    imgs = []
 
-    for image in images:
+    for filename in images:
+        image = mpimg.imread(filename)
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-        # Find the chessboard corners
-        ret, corners = cv2.findChessboardCorners(gray, (nx, ny), None)
+        ret, corners = cv2.findChessboardCorners(gray, grid_size, None)
 
-        # If found, add object points, image points
         if ret:
             objpoints.append(objp)
             imgpoints.append(corners)
-            imgs.append(image)
 
-    return imgs, objpoints, imgpoints
-
-
-def calibrate_camera(objpoints, imgpoints, img_size):
-    ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, img_size, None, None)
+    ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, image_size, None, None)
     return mtx, dist
 
 
@@ -49,6 +42,7 @@ def undistore(image, mtx, dist):
 
 def birds_eye(image):
     img_size = (image.shape[1], image.shape[0])
+    # region of interest
     p1 = (1250, 720)
     p2 = (810, 482)
     p3 = (490, 482)
@@ -59,8 +53,7 @@ def birds_eye(image):
     M = cv2.getPerspectiveTransform(src, dst)
     warped = cv2.warpPerspective(undist, M, img_size)
 
-
-    color = [0, 0, 255]  # green
+    color = [0, 0, 255]  # red
     thickness = 10
 
     cv2.line(image, p1, p2, color, thickness)
@@ -71,11 +64,8 @@ def birds_eye(image):
     return warped, M
 
 
-nx = 9
-ny = 6
-calibration_images = read_images('camera_cal/calibration*.jpg')
-images, objpoints, imgpoints = get_cam_calibration_points(calibration_images, nx, ny)
-mtx, dist = calibrate_camera(objpoints, imgpoints, images[0].shape[1::-1])
+images = read_images('camera_cal/calibration*.jpg')
+mtx, dist = camera_calibration(images, (9, 6), images[0].shape[1::-1])
 
 # for image, corners in zip(images, imgpoints):
 #     original_img = image.copy()
