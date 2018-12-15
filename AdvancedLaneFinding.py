@@ -286,13 +286,6 @@ class LaneFinder:
         return color_warp
 
     @staticmethod
-    def _draw_object_points(image, points, color=(255, 0, 0), thickness=10):
-        cv2.line(image, tuple(points[0]), tuple(points[1]), color, thickness)
-        cv2.line(image, tuple(points[1]), tuple(points[2]), color, thickness)
-        cv2.line(image, tuple(points[2]), tuple(points[3]), color, thickness)
-        cv2.line(image, tuple(points[3]), tuple(points[0]), color, thickness)
-
-    @staticmethod
     def _combinbe_images(image1, image2):
         return cv2.addWeighted(image1, 1, image2, 0.3, 0)
 
