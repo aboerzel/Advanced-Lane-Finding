@@ -194,17 +194,16 @@ class Line:
         # self.line_base_pos = None
         # difference in fit coefficients between last and new fits
         # self.diffs = np.array([0, 0, 0], dtype='float')
-        # x values for detected line pixels
-        # self.allx = None
-        # y values for detected line pixels
-        # self.ally = None
 
         self.last_fits = []
         self.x_base = None
-
-        # these two are for debugging/pipeline imaging
         self.last_inds = np.array([])
         self.fail_count = 0
+
+    @staticmethod
+    def _poly_it(p, x):
+        f = np.poly1d(p)
+        return f(x)
 
     def add(self, leftx, lefty, image_height):
 
@@ -223,11 +222,6 @@ class Line:
 
             self.best_fit = np.mean(np.array(self.last_fits), axis=0)
             self.bestx = self._poly_it(self.best_fit, ploty)
-
-    @staticmethod
-    def _poly_it(p, x):
-        f = np.poly1d(p)
-        return f(x)
 
     def incrementFailCount(self):
         self.fail_count += 1
@@ -255,35 +249,6 @@ class LaneFinder:
         lane_overlay = image_processor.unwarp(lane_overlay)
         output_img = self._combinbe_images(undist_img, lane_overlay)
         return output_img
-
-    def _draw_lane_lines(self, image, color=(0, 255, 0), thickness=10):
-        color_warp = np.zeros_like(image).astype(np.uint8)
-
-        ploty = np.linspace(0, image.shape[0] - 1, image.shape[0])
-
-        left_fit = self.leftLine.last_fit
-        right_fit = self.rightLine.last_fit
-
-        if left_fit is not None:
-            left_fitx = self.leftLine.last_fitx
-
-        if right_fit is not None:
-            right_fitx = self.rightLine.last_fitx
-
-        if left_fit is not None and right_fit is not None:
-            # Recast the x and y points into usable format for cv2.fillPoly()
-            pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
-            pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
-            pts = np.hstack((pts_left, pts_right))
-            cv2.fillPoly(color_warp, np.int_([pts]), color)
-        elif left_fit is not None:
-            points = np.stack((left_fitx, ploty), axis=1).astype(np.int32)
-            cv2.polylines(color_warp, [points], False, color, thickness=thickness)
-        elif right_fit is not None:
-            points = np.stack((right_fitx, ploty), axis=1).astype(np.int32)
-            cv2.polylines(color_warp, [points], False, color, thickness=thickness)
-
-        return color_warp
 
     @staticmethod
     def _combinbe_images(image1, image2):
@@ -394,6 +359,35 @@ class LaneFinder:
             self.rightLine.add(rightx, righty, binary_warped.shape[0])
         else:
             self.rightLine.incrementFailCount()
+
+    def _draw_lane_lines(self, image, color=(0, 255, 0), thickness=10):
+        color_warp = np.zeros_like(image).astype(np.uint8)
+
+        ploty = np.linspace(0, image.shape[0] - 1, image.shape[0])
+
+        left_fit = self.leftLine.last_fit
+        right_fit = self.rightLine.last_fit
+
+        if left_fit is not None:
+            left_fitx = self.leftLine.last_fitx
+
+        if right_fit is not None:
+            right_fitx = self.rightLine.last_fitx
+
+        if left_fit is not None and right_fit is not None:
+            # Recast the x and y points into usable format for cv2.fillPoly()
+            pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
+            pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
+            pts = np.hstack((pts_left, pts_right))
+            cv2.fillPoly(color_warp, np.int_([pts]), color)
+        elif left_fit is not None:
+            points = np.stack((left_fitx, ploty), axis=1).astype(np.int32)
+            cv2.polylines(color_warp, [points], False, color, thickness=thickness)
+        elif right_fit is not None:
+            points = np.stack((right_fitx, ploty), axis=1).astype(np.int32)
+            cv2.polylines(color_warp, [points], False, color, thickness=thickness)
+
+        return color_warp
 
 
 image_processor = ImageProcessor(CameraCalibator())
