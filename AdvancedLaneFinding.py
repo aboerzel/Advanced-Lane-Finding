@@ -165,7 +165,7 @@ class ImageProcessor:
         warped = cv2.warpPerspective(image, self.invM, img_size)
         return warped
 
-    def get_undistort(self, image):
+    def undistort(self, image):
         mtx, dist = self.camera_calibator.get_calibration()
         return cv2.undistort(image, mtx, dist, None, mtx)
 
@@ -205,7 +205,7 @@ class Line:
         f = np.poly1d(p)
         return f(x)
 
-    def add(self, leftx, lefty, image_height):
+    def add_point(self, leftx, lefty, image_height):
 
         self.detected = False
         self.last_inds = np.array([])
@@ -241,7 +241,7 @@ class LaneFinder:
         self.rightLine = Line("right")
 
     def process(self, image):
-        undist_img = image_processor.get_undistort(image)
+        undist_img = image_processor.undistort(image)
         birds_eye_img = image_processor.warp(undist_img)
         binary_img = image_processor.get_binary_image(birds_eye_img)
         self._find_lane_points(binary_img, nwindows=9, margin=100, minpix=50)
@@ -345,7 +345,7 @@ class LaneFinder:
             leftx, lefty = self._search_around_poly(binary_warped, self.leftLine.last_fit, margin)
 
         if leftx is not None and lefty is not None:
-            self.leftLine.add(leftx, lefty, binary_warped.shape[0])
+            self.leftLine.add_point(leftx, lefty, binary_warped.shape[0])
         else:
             self.leftLine.incrementFailCount()
 
@@ -356,7 +356,7 @@ class LaneFinder:
             rightx, righty = self._search_around_poly(binary_warped, self.rightLine.last_fit, margin)
 
         if rightx is not None and righty is not None:
-            self.rightLine.add(rightx, righty, binary_warped.shape[0])
+            self.rightLine.add_point(rightx, righty, binary_warped.shape[0])
         else:
             self.rightLine.incrementFailCount()
 
@@ -413,4 +413,6 @@ if args['image'] is not None:
 elif args['video'] is not None:
     process_video(args['video'], args['video'])
 else:
-    print("parameter missing")
+    print("USAGE:")
+    print("      python AdvancedLaneFinding.py -i image.jpg")
+    print("      python AdvancedLaneFinding.py -v video.mp4")
