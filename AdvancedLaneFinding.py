@@ -239,6 +239,8 @@ class LaneFinder:
         self.image_processor = image_processor
         self.leftLine = Line("left")
         self.rightLine = Line("right")
+        self.ym_per_pix = 3 / 88  # meters per pixel in y dimension
+        self.xm_per_pix = 3.7 / 630  # meters per pixel in x dimension
 
     def process(self, image):
         undist_img = image_processor.undistort(image)
@@ -248,6 +250,7 @@ class LaneFinder:
         lane_overlay = self._draw_lane_lines(birds_eye_img)
         lane_overlay = image_processor.unwarp(lane_overlay)
         output_img = self._combinbe_images(undist_img, lane_overlay)
+        self._draw_curvature_and_position(output_img)
         return output_img
 
     @staticmethod
@@ -388,6 +391,39 @@ class LaneFinder:
             cv2.polylines(color_warp, [points], False, color, thickness=thickness)
 
         return color_warp
+
+    @staticmethod
+    def _poly_it(p, x):
+        f = np.poly1d(p)
+        return f(x)
+
+    def _determine_curvature(self, line, ploty, ym_per_pix):
+        y_eval = np.max(ploty)
+        radius = ((1 + (2 * line.best_fit[0] * y_eval * ym_per_pix + line.best_fit[1]) ** 2) ** 1.5) / np.absolute(
+            2 * line.best_fit[0])
+        return radius
+
+    def _get_lane_position(self, image, leftLine, rightLine):
+        bottom_left = self._poly_it(leftLine.best_fit, image.shape[0])
+        bottom_right = self._poly_it(rightLine.best_fit, image.shape[0])
+        lane_center = int(bottom_left + (bottom_right - bottom_left) / 2.0)
+        diff = int(image.shape[1] / 2.0) - lane_center
+        return diff
+
+    def _draw_curvature_and_position(self, image):
+        diff = self._get_lane_position(image, self.leftLine, self.rightLine)
+
+        # Define conversions in x and y from pixels space to meters
+        ploty = np.linspace(0, image.shape[0] - 1, image.shape[0])
+        left_curverad = self._determine_curvature(self.leftLine, ploty, self.ym_per_pix)
+        right_curverad = self._determine_curvature(self.rightLine, ploty, self.ym_per_pix)
+
+        lane_position = "Lane Position: {:.2f}m".format(diff * self.xm_per_pix)
+        lane_curvature = "Lane Curvature Radius: left: {:.2f}m, right: {:.2f}m".format(left_curverad, right_curverad)
+        font = cv2.FONT_HERSHEY_SIMPLEX
+
+        cv2.putText(image, lane_position, (30, 40), font, 1, (255, 255, 255), 2)
+        cv2.putText(image, lane_curvature, (30, 80), font, 1, (255, 255, 255), 2)
 
 
 image_processor = ImageProcessor(CameraCalibator())
