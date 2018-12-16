@@ -110,53 +110,6 @@ class ImageProcessor:
         Minv = cv2.getPerspectiveTransform(dst_points, src_points)
         return M, Minv
 
-    @staticmethod
-    def _abs_sobel_threshold(image, orient='x', thresh=(0, 255)):
-        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-
-        if orient == 'x':
-            d = cv2.Sobel(gray, cv2.CV_64F, 1, 0)
-        else:
-            d = cv2.Sobel(gray, cv2.CV_64F, 0, 1)
-
-        abs_d = np.absolute(d)
-        scaled = np.uint8(255 * abs_d / np.max(abs_d))
-
-        binary_output = np.zeros_like(scaled)
-        binary_output[(scaled >= thresh[0]) & (scaled <= thresh[1])] = 1
-        return binary_output
-
-    @staticmethod
-    def _mag_threshold(image, kernel=3, thresh=(0, 255)):
-        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-
-        sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=kernel)
-        sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=kernel)
-
-        magnitude = np.sqrt(sobelx ** 2 + sobely ** 2)
-
-        scaled_sobel = np.uint8(255 * magnitude / np.max(magnitude))
-
-        binary_output = np.zeros_like(scaled_sobel)
-        binary_output[(scaled_sobel >= thresh[0]) & (scaled_sobel <= thresh[1])] = 1
-        return binary_output
-
-    @staticmethod
-    def _dir_threshold(image, kernel=3, thresh=(0, np.pi / 2)):
-        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-
-        sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=kernel)
-        sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=kernel)
-
-        abs_x = np.absolute(sobelx)
-        abs_y = np.absolute(sobely)
-
-        dir = np.arctan2(abs_y, abs_x)
-
-        binary_output = np.zeros_like(dir)
-        binary_output[(dir >= thresh[0]) & (dir <= thresh[1])] = 1
-        return binary_output
-
     def warp(self, image):
         img_size = (image.shape[1], image.shape[0])
         warped = cv2.warpPerspective(image, self.M, img_size)
@@ -171,8 +124,56 @@ class ImageProcessor:
         mtx, dist = self.camera_calibator.get_calibration()
         return cv2.undistort(image, mtx, dist, None, mtx)
 
+    @staticmethod
+    def _hls_color_thresh(image, thresh_low, thresh_high):
+        # 1) Convert to HLS color space
+        # imgHLS = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
+        imgHLS = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
+        # Hue (0,180) Light (0,255), satur (0,255)
+
+        # 3) Return a binary image of threshold result
+        binary_output = np.zeros((image.shape[0], image.shape[1]))
+        binary_output[(imgHLS[:, :, 0] >= thresh_low[0]) & (imgHLS[:, :, 0] <= thresh_high[0]) & (
+                imgHLS[:, :, 1] >= thresh_low[1]) & (imgHLS[:, :, 1] <= thresh_high[1]) & (
+                              imgHLS[:, :, 2] >= thresh_low[2]) & (imgHLS[:, :, 2] <= thresh_high[2])] = 1
+        return binary_output
+
+    @staticmethod
+    def _sobel_x(image, kernel=3, thresh=(20, 100)):
+        # 1) Convert to grayscale
+        imghsl = cv2.cvtColor(image, cv2.COLOR_RGB2HLS)
+        # 2) Take the gradient in x and y separately
+        # Channels L and S from HLS
+        sobelx1 = cv2.Sobel(imghsl[:, :, 1], cv2.CV_64F, 1, 0, ksize=kernel)
+        sobelx2 = cv2.Sobel(imghsl[:, :, 2], cv2.CV_64F, 1, 0, ksize=kernel)
+
+        # 4) Scale to 8-bit (0 - 255) and convert to type = np.uint8
+        scaled_sobelx1 = np.uint8(255 * sobelx1 / np.max(sobelx1))
+        scaled_sobelx2 = np.uint8(255 * sobelx2 / np.max(sobelx2))
+
+        # 5) Create a binary mask where mag thresholds are met
+        binary_outputx1 = np.zeros_like(scaled_sobelx1)
+        binary_outputx1[(scaled_sobelx1 >= thresh[0]) & (scaled_sobelx1 <= thresh[1])] = 1
+
+        binary_outputx2 = np.zeros_like(scaled_sobelx2)
+        binary_outputx2[(scaled_sobelx2 >= thresh[0]) & (scaled_sobelx2 <= thresh[1])] = 1
+
+        binary_output = np.zeros_like(scaled_sobelx1)
+        binary_output[(binary_outputx1 == 1) | (binary_outputx2 == 1)] = 1
+        return binary_output
+
     def get_binary_image(self, image):
-        binary_image = self._mag_threshold(image, thresh=(25, 200))
+        yellow_low = np.array([0, 100, 100])
+        yellow_high = np.array([50, 255, 255])
+        white_low = np.array([18, 0, 180])
+        white_high = np.array([255, 80, 255])
+
+        imgThres_yellow = self._hls_color_thresh(image, yellow_low, yellow_high)
+        imgThres_white = self._hls_color_thresh(image, white_low, white_high)
+        imgThr_sobelx = self._sobel_x(image, kernel=9, thresh=(80, 220))
+
+        binary_image = np.zeros_like(imgThres_yellow)
+        binary_image[(imgThres_yellow == 1) | (imgThres_white == 1) | (imgThr_sobelx == 1)] = 1
         return binary_image
 
 
@@ -250,18 +251,18 @@ class LaneFinder:
             win_y_low = binary_warped.shape[0] - (window + 1) * window_height
             win_y_high = binary_warped.shape[0] - window * window_height
 
-            ### Find the four below boundaries of the window ###
+            # Find the four below boundaries of the window
             win_x_low = x_current - margin
             win_x_high = x_current + margin
 
-            ### Identify the nonzero pixels in x and y within the window ###
+            # Identify the nonzero pixels in x and y within the window
             good_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) &
                          (nonzerox >= win_x_low) & (nonzerox < win_x_high)).nonzero()[0]
 
             # Append these indices to the list
             lane_inds.append(good_inds)
 
-            ### If you found > minpix pixels, recenter next window ###
+            # If you found > minpix pixels, recenter next window
             if len(good_inds) > minpix:
                 x_current = np.int(np.mean(nonzerox[good_inds]))
 
@@ -286,10 +287,10 @@ class LaneFinder:
         nonzeroy = np.array(nonzero[0])
         nonzerox = np.array(nonzero[1])
 
-        ### Set the area of search based on activated x-values ###
-        ### within the +/- margin of our polynomial function ###
-        ### Hint: consider the window areas for the similarly named variables ###
-        ### in the previous quiz, but change the windows to our new search area ###
+        # Set the area of search based on activated x-values
+        # within the +/- margin of our polynomial function
+        # Hint: consider the window areas for the similarly named variables
+        # in the previous quiz, but change the windows to our new search area
         lane_inds = ((nonzerox > (last_fit[0] * (nonzeroy ** 2) + last_fit[1] * nonzeroy + last_fit[2] - margin)) &
                      (nonzerox < (last_fit[0] * (nonzeroy ** 2) + last_fit[1] * nonzeroy + last_fit[2] + margin)))
 
@@ -317,8 +318,8 @@ class LaneFinder:
         return radius
 
     @staticmethod
-    def _lines_sanity_check(left_x, rigth_x, left_radius, right_radius, threashold=100, min_distance=450,
-                            max_distance=750, max_radius_diff=10000):
+    def _lines_sanity_check(left_x, rigth_x, left_radius, right_radius, parallelism=100, min_distance=300,
+                            max_distance=700, max_radius_diff=5000):
         delta_x = []
         for i in range(len(left_x) - 1):
             delta_x.append(abs(rigth_x[i] - left_x[i]))
@@ -330,23 +331,27 @@ class LaneFinder:
 
         # check distance
         delta_min = delta_x.min()
-        if delta_min < min_distance or delta_x.max() > max_distance:
+        delta_max = delta_x.max()
+        if delta_min < min_distance or delta_max > max_distance:
             return False
 
         # check parallelism
         delta_x -= delta_min
-        return delta_x.max() < threashold
+        delta_max = delta_x.max()
+        if delta_max < parallelism:
+            return False
+
+        return True
 
     def _find_lane_points(self, binary_warped, birds_eye_img, nwindows, margin, minpix, color=(0, 255, 0)):
 
-        left_detected = False
-        right_detected = False
-
         if self.leftLine.detected:
-            leftx, lefty, left_detected = self._search_around_poly(binary_warped, self.leftLine.last_fit, margin)
+            leftx, lefty, self.leftLine.detected = self._search_around_poly(
+                binary_warped, self.leftLine.last_fit, margin)
 
         if self.rightLine.detected:
-            rightx, righty, right_detected = self._search_around_poly(binary_warped, self.rightLine.last_fit, margin)
+            rightx, righty, self.rightLine.detected = self._search_around_poly(
+                binary_warped, self.rightLine.last_fit, margin)
 
         if not self.leftLine.detected or not self.rightLine.detected:
             # Take a histogram of the bottom half of the image
@@ -359,18 +364,12 @@ class LaneFinder:
             right_half = histogram[midpoint:]
 
             self.leftLine.x_base = np.argmax(left_half)
-            leftx, lefty, left_detected = self._blind_search(
+            leftx, lefty, self.leftLine.detected = self._blind_search(
                 binary_warped, self.leftLine.x_base, nwindows, margin, minpix)
 
             self.rightLine.x_base = np.argmax(right_half) + midpoint
-            rightx, righty, right_detected = self._blind_search(
+            rightx, righty, self.rightLine.detected = self._blind_search(
                 binary_warped, self.rightLine.x_base, nwindows, margin, minpix)
-
-        # sanity check
-        if not left_detected or not right_detected:
-            self.leftLine.detected = left_detected
-            self.rightLine.detected = right_detected
-            return birds_eye_img  # skip if no 2 lines were detected
 
         lefty = np.array(lefty).astype(np.float32)
         leftx = np.array(leftx).astype(np.float32)
@@ -409,10 +408,13 @@ class LaneFinder:
         right_radius = self._get_curve_radius(rightx, righty)
 
         # sanity check
-        if not self._lines_sanity_check(left_fitx, rigth_fitx, left_radius, right_radius, threashold=200):
-            self.leftLine.detected = left_detected
-            self.rightLine.detected = right_detected
-            return birds_eye_img  # skip current frame if sanity check failed
+        if not self._lines_sanity_check(left_fitx, rigth_fitx, left_radius, right_radius):
+            self.leftLine.detected = False
+            self.rightLine.detected = False
+            leftx = self.leftLine.X
+            lefty = self.leftLine.Y
+            rightx = self.rightLine.X
+            righty = self.rightLine.Y
 
         # Recast the x and y points into usable format for cv2.fillPoly() and draw lane
         pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
@@ -445,12 +447,12 @@ class LaneFinder:
         self.leftLine.count += 1
         self.rightLine.count += 1
 
-        self.leftLine.detected = left_detected
-        self.rightLine.detected = right_detected
-
         return color_warp
 
     def _draw_curvature_and_position(self, image):
+        if not self.leftLine.detected or not self.rightLine.detected:
+            return  # skip if no lines detected
+
         # Calculate the vehicle position relative to the center of the lane
         position = (self.leftLine.last_x_int + self.rightLine.last_x_int) / 2
         distance_from_center = abs((image.shape[1] / 2 - position) * self.xm_per_pix)
@@ -459,7 +461,7 @@ class LaneFinder:
         curve_radius = int((self.leftLine.radius + self.rightLine.radius) / 2)
 
         lane_position = "Lane Position: {:.2f}m".format(distance_from_center)
-        lane_curvature = "Lane Curvature Radius: {:.2f}m".format(curve_radius)
+        lane_curvature = "Lane Curvature Radius: {:d}m".format(int(round(curve_radius)))
 
         font = cv2.FONT_HERSHEY_SIMPLEX
         cv2.putText(image, lane_position, (30, 40), font, 1, (255, 255, 255), 2)
