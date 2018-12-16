@@ -317,11 +317,16 @@ class LaneFinder:
         return radius
 
     @staticmethod
-    def _lines_sanity_check(left_x, rigth_x, threashold=100, min_distance=500, max_distance=700):
+    def _lines_sanity_check(left_x, rigth_x, left_radius, right_radius, threashold=100, min_distance=450,
+                            max_distance=750, max_radius_diff=10000):
         delta_x = []
         for i in range(len(left_x) - 1):
             delta_x.append(abs(rigth_x[i] - left_x[i]))
         delta_x = np.array(delta_x)
+
+        # check similar curvature
+        if abs(left_radius - right_radius) > max_radius_diff:
+            return False
 
         # check distance
         delta_min = delta_x.min()
@@ -399,8 +404,12 @@ class LaneFinder:
         left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
         rigth_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
 
+        # Compute radius of curvature for each lane in meters
+        left_radius = self._get_curve_radius(leftx, lefty)
+        right_radius = self._get_curve_radius(rightx, righty)
+
         # sanity check
-        if not self._lines_sanity_check(left_fitx, rigth_fitx, threashold=200):
+        if not self._lines_sanity_check(left_fitx, rigth_fitx, left_radius, right_radius, threashold=200):
             self.leftLine.detected = left_detected
             self.rightLine.detected = right_detected
             return birds_eye_img  # skip current frame if sanity check failed
@@ -430,9 +439,8 @@ class LaneFinder:
         self.leftLine.last_fit = np.polyfit(lefty, leftx, 2)
         self.rightLine.last_fit = np.polyfit(righty, rightx, 2)
 
-        # Compute radius of curvature for each lane in meters
-        self.leftLine.radius = self._get_curve_radius(leftx, lefty)
-        self.rightLine.radius = self._get_curve_radius(rightx, righty)
+        self.leftLine.radius = left_radius
+        self.rightLine.radius = right_radius
 
         self.leftLine.count += 1
         self.rightLine.count += 1
