@@ -187,23 +187,16 @@ class Line:
         self.X = None
         self.Y = None
 
+        #  polynomial coefficients for the most recent fit
+        self.last_fit = None
+
         # Store recent x intercepts for averaging across frames
         self.x_int = deque(maxlen=n)
-        # self.top = deque(maxlen=n)
-
         # Remember previous x intercept to compare against current one
         self.last_x_int = None
-        # self.last_top = None
 
         # Remember radius of curvature
         self.radius = None
-
-        # Store recent polynomial coefficients for averaging across frames
-        # self.fit0 = deque(maxlen=n)
-        # self.fit1 = deque(maxlen=n)
-        # self.fit2 = deque(maxlen=n)
-        self.last_fit = None
-        # self.pts = []
 
         # Count the number of frames
         self.count = 0
@@ -345,11 +338,12 @@ class LaneFinder:
             right_half = histogram[midpoint:]
 
             self.leftLine.x_base = np.argmax(left_half)
-            leftx, lefty, self.leftLine.detected = self._blind_search(binary_warped, self.leftLine.x_base, nwindows,
-                                                                      margin, minpix)
+            leftx, lefty, self.leftLine.detected = self._blind_search(
+                binary_warped, self.leftLine.x_base, nwindows, margin, minpix)
+
             self.rightLine.x_base = np.argmax(right_half) + midpoint
-            rightx, righty, self.rightLine.detected = self._blind_search(binary_warped, self.rightLine.x_base, nwindows,
-                                                                         margin, minpix)
+            rightx, righty, self.rightLine.detected = self._blind_search(
+                binary_warped, self.rightLine.x_base, nwindows, margin, minpix)
 
         if not self.leftLine.detected or not self.rightLine.detected:
             return  # skip if no lines detected
@@ -364,32 +358,28 @@ class LaneFinder:
         right_fit = np.polyfit(righty, rightx, 2)
 
         # Calculate intercepts to extend the polynomial to the top and bottom of warped image
-        left_x_int, left_top = self._get_intercepts(left_fit, binary_warped.shape[0])
-        right_x_int, right_top = self._get_intercepts(right_fit, binary_warped.shape[0])
+        left_x_bottom, left_x_top = self._get_intercepts(left_fit, binary_warped.shape[0])
+        right_x_bottom, right_x_top = self._get_intercepts(right_fit, binary_warped.shape[0])
 
         # Average intercepts across n frames
-        self.leftLine.x_int.append(left_x_int)
-        # self.leftLine.top.append(left_top)
+        self.leftLine.x_int.append(left_x_bottom)
         self.leftLine.last_x_int = np.mean(self.leftLine.x_int)
-        # self.leftLine.last_top = np.mean(self.leftLine.top)
-        #
-        self.rightLine.x_int.append(right_x_int)
-        # self.rightLine.top.append(right_top)
+
+        self.rightLine.x_int.append(right_x_bottom)
         self.rightLine.last_x_int = np.mean(self.rightLine.x_int)
-        # self.rightLine.last_top = np.mean(self.rightLine.top)
 
         # Add averaged intercepts to current x and y vals
-        leftx = np.append(leftx, left_x_int)
-        leftx = np.append(leftx, left_top)
-        lefty = np.append(lefty, 0)
-        lefty = np.append(lefty, binary_warped.shape[0])
+        leftx = np.append(leftx, left_x_bottom)
+        leftx = np.append(leftx, left_x_top)
+        lefty = np.append(lefty, 0)  # y value for x_bottom
+        lefty = np.append(lefty, binary_warped.shape[0])  # y value for x_top
 
-        rightx = np.append(rightx, right_x_int)
-        rightx = np.append(rightx, right_top)
-        righty = np.append(righty, 0)
-        righty = np.append(righty, binary_warped.shape[0])
+        rightx = np.append(rightx, right_x_bottom)
+        rightx = np.append(rightx, right_x_top)
+        righty = np.append(righty, 0)  # y value for x_bottom
+        righty = np.append(righty, binary_warped.shape[0])  # y value for x_top
 
-        # Sort detected pixels based on the yvals
+        # Sort detected pixels by y values
         leftx, lefty = self._sort_by_y_vals(leftx, lefty)
         rightx, righty = self._sort_by_y_vals(rightx, righty)
 
@@ -401,20 +391,7 @@ class LaneFinder:
 
         # Recalculate polynomial with intercepts and average across n frames
         left_fit = np.polyfit(lefty, leftx, 2)
-        # Left.fit0.append(left_fit[0])
-        # Left.fit1.append(left_fit[1])
-        # Left.fit2.append(left_fit[2])
-        # left_fit = [np.mean(Left.fit0),
-        #             np.mean(Left.fit1),
-        #             np.mean(Left.fit2)]
-
         right_fit = np.polyfit(righty, rightx, 2)
-        # Left.fit0.append(left_fit[0])
-        # Left.fit1.append(left_fit[1])
-        # Left.fit2.append(left_fit[2])
-        # left_fit = [np.mean(Left.fit0),
-        #             np.mean(Left.fit1),
-        #             np.mean(Left.fit2)]
 
         # Fit polynomial to detected pixels
         self.leftLine.last_fit = left_fit
@@ -431,8 +408,10 @@ class LaneFinder:
         color_warp = np.zeros_like(image).astype(np.uint8)
 
         ploty = np.linspace(0, image.shape[0] - 1, image.shape[0])
-        left_fitx = self.leftLine.last_fit[0] * ploty ** 2 + self.leftLine.last_fit[1] * ploty + self.leftLine.last_fit[2]
-        rigth_fitx = self.rightLine.last_fit[0] * ploty ** 2 + self.rightLine.last_fit[1] * ploty + self.rightLine.last_fit[2]
+        left_fitx = self.leftLine.last_fit[0] * ploty ** 2 + self.leftLine.last_fit[1] * ploty + \
+                    self.leftLine.last_fit[2]
+        rigth_fitx = self.rightLine.last_fit[0] * ploty ** 2 + self.rightLine.last_fit[1] * ploty + \
+                     self.rightLine.last_fit[2]
 
         # Recast the x and y points into usable format for cv2.fillPoly()
         pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
