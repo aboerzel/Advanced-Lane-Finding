@@ -317,8 +317,16 @@ class LaneFinder:
         radius = ((1 + (2 * fit_cr[0] * np.max(yvals) + fit_cr[1]) ** 2) ** 1.5) / np.absolute(2 * fit_cr[0])
         return radius
 
-    def _find_lane_points(self, binary_warped, nwindows, margin, minpix):
+    @staticmethod
+    def _check_lines_parallel(left_x, rigth_x, threashold=100):
+        delta_x = []
+        for i in range(len(left_x)-1):
+            delta_x.append(abs(rigth_x[i] - left_x[i]))
+        delta_x = np.array(delta_x)
+        delta_x -= delta_x.min()
+        return delta_x.max() < threashold
 
+    def _find_lane_points(self, binary_warped, nwindows, margin, minpix):
         if self.leftLine.detected:
             leftx, lefty, self.leftLine.detected = self._search_around_poly(binary_warped, self.leftLine.last_fit,
                                                                             margin)
@@ -390,12 +398,8 @@ class LaneFinder:
         self.rightLine.Y = righty
 
         # Recalculate polynomial with intercepts and average across n frames
-        left_fit = np.polyfit(lefty, leftx, 2)
-        right_fit = np.polyfit(righty, rightx, 2)
-
-        # Fit polynomial to detected pixels
-        self.leftLine.last_fit = left_fit
-        self.rightLine.last_fit = right_fit
+        self.leftLine.last_fit = np.polyfit(lefty, leftx, 2)
+        self.rightLine.last_fit = np.polyfit(righty, rightx, 2)
 
         # Compute radius of curvature for each lane in meters
         self.leftLine.radius = self._get_curve_radius(leftx, lefty)
@@ -412,6 +416,9 @@ class LaneFinder:
                     self.leftLine.last_fit[2]
         rigth_fitx = self.rightLine.last_fit[0] * ploty ** 2 + self.rightLine.last_fit[1] * ploty + \
                      self.rightLine.last_fit[2]
+
+        if not self._check_lines_parallel(left_fitx, rigth_fitx, threashold=100):
+            return  # skip
 
         # Recast the x and y points into usable format for cv2.fillPoly()
         pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
