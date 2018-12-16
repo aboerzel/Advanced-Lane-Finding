@@ -450,9 +450,6 @@ class LaneFinder:
         return color_warp
 
     def _draw_curvature_and_position(self, image):
-        # if not self.leftLine.detected or not self.rightLine.detected:
-        #     return  # skip if no lines detected
-
         # Calculate the vehicle position relative to the center of the lane
         position = (self.leftLine.last_x_int + self.rightLine.last_x_int) / 2
         distance_from_center = abs((image.shape[1] / 2 - position) * self.xm_per_pix)
