@@ -215,10 +215,9 @@ class LaneFinder:
         undist_img = image_processor.undistort(image)
         birds_eye_img = image_processor.warp(undist_img)
         binary_img = image_processor.get_binary_image(birds_eye_img)
-        lane_overlay = self._find_lane_points(binary_img, birds_eye_img, nwindows=9, margin=100, minpix=50)
-        # lane_overlay = self._draw_lane(birds_eye_img)
-        lane_overlay = image_processor.unwarp(lane_overlay)
-        output_img = self._combinbe_images(undist_img, lane_overlay)
+        warped_lane_img = self._find_lane_points(binary_img, birds_eye_img, nwindows=9, margin=100, minpix=50)
+        unwarped_lane_img = image_processor.unwarp(warped_lane_img)
+        output_img = self._combinbe_images(undist_img, unwarped_lane_img)
         self._draw_curvature_and_position(output_img)
         return output_img
 
@@ -358,7 +357,7 @@ class LaneFinder:
         if not left_detected or not right_detected:
             self.leftLine.detected = left_detected
             self.rightLine.detected = right_detected
-            return birds_eye_img  # skip if no lines detected
+            return birds_eye_img  # skip if no 2 lines were detected
 
         lefty = np.array(lefty).astype(np.float32)
         leftx = np.array(leftx).astype(np.float32)
@@ -392,10 +391,10 @@ class LaneFinder:
         left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
         rigth_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
 
-        if not self._check_lines_parallel(left_fitx, rigth_fitx, threashold=100):
+        if not self._check_lines_parallel(left_fitx, rigth_fitx, threashold=200):
             self.leftLine.detected = left_detected
             self.rightLine.detected = right_detected
-            return birds_eye_img  # skip
+            return birds_eye_img  # skip current frame if detected lines not parallel
 
         # Recast the x and y points into usable format for cv2.fillPoly() and draw lane
         pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
