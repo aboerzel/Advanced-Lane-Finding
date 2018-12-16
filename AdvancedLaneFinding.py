@@ -318,7 +318,7 @@ class LaneFinder:
         return radius
 
     @staticmethod
-    def _lines_sanity_check(left_x, rigth_x, left_radius, right_radius, parallelism=100, min_distance=300,
+    def _lines_sanity_check(left_x, rigth_x, left_radius, right_radius, parallelism=20, min_distance=300,
                             max_distance=700, max_radius_diff=5000):
         delta_x = []
         for i in range(len(left_x) - 1):
