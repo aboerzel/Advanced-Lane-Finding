@@ -409,8 +409,10 @@ class LaneFinder:
 
         # Sanity check
         if not self._lines_sanity_check(left_fitx, rigth_fitx, left_radius, right_radius):
+            # use blind search for next frame
             self.leftLine.detected = False
             self.rightLine.detected = False
+            # use values from previous frame
             leftx = self.leftLine.X
             lefty = self.leftLine.Y
             rightx = self.rightLine.X
