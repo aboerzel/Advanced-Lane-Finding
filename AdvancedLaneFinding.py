@@ -46,7 +46,7 @@ class CameraCalibator:
                 objpoints.append(objp)
                 imgpoints.append(corners)
             else:
-                print("Unable to find appropriate number of corners on {0}".format(filename))
+                print("Unable to find chessboard corners on {0}".format(filename))
 
         ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, image_size, None, None)
         return mtx, dist
@@ -183,16 +183,16 @@ class Line:
         # Was the line found in the previous frame?
         self.detected = False
 
-        # Remember x and y values of lanes in previous frame
+        # x and y values of lanes in previous frame
         self.X = None
         self.Y = None
 
-        #  polynomial coefficients for the most recent fit
+        # polynomial coefficients for previous frame
         self.last_fit = None
 
-        # Store recent x intercepts for averaging across frames
+        # recent x intercepts for averaging across frames
         self.x_int = deque(maxlen=n)
-        # Remember previous x intercept to compare against current one
+        # previous x intercept to compare against current one
         self.last_x_int = None
 
         # Remember radius of curvature
@@ -317,12 +317,19 @@ class LaneFinder:
         return radius
 
     @staticmethod
-    def _check_lines_parallel(left_x, rigth_x, threashold=100):
+    def _lines_sanity_check(left_x, rigth_x, threashold=100, min_distance=500, max_distance=700):
         delta_x = []
         for i in range(len(left_x) - 1):
             delta_x.append(abs(rigth_x[i] - left_x[i]))
         delta_x = np.array(delta_x)
-        delta_x -= delta_x.min()
+
+        # check distance
+        delta_min = delta_x.min()
+        if delta_min < min_distance or delta_x.max() > max_distance:
+            return False
+
+        # check parallelism
+        delta_x -= delta_min
         return delta_x.max() < threashold
 
     def _find_lane_points(self, binary_warped, birds_eye_img, nwindows, margin, minpix, color=(0, 255, 0)):
@@ -354,6 +361,7 @@ class LaneFinder:
             rightx, righty, right_detected = self._blind_search(
                 binary_warped, self.rightLine.x_base, nwindows, margin, minpix)
 
+        # sanity check
         if not left_detected or not right_detected:
             self.leftLine.detected = left_detected
             self.rightLine.detected = right_detected
@@ -372,7 +380,7 @@ class LaneFinder:
         left_x_bottom, left_x_top = self._get_intercepts(left_fit, binary_warped.shape[0])
         right_x_bottom, right_x_top = self._get_intercepts(right_fit, binary_warped.shape[0])
 
-        # Add averaged intercepts to current x and y vals
+        # Add averaged intercepts to current x and y values
         leftx = np.append(leftx, left_x_bottom)
         leftx = np.append(leftx, left_x_top)
         lefty = np.append(lefty, 0)  # y value for x_bottom
@@ -391,10 +399,11 @@ class LaneFinder:
         left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
         rigth_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
 
-        if not self._check_lines_parallel(left_fitx, rigth_fitx, threashold=200):
+        # sanity check
+        if not self._lines_sanity_check(left_fitx, rigth_fitx, threashold=200):
             self.leftLine.detected = left_detected
             self.rightLine.detected = right_detected
-            return birds_eye_img  # skip current frame if detected lines not parallel
+            return birds_eye_img  # skip current frame if sanity check failed
 
         # Recast the x and y points into usable format for cv2.fillPoly() and draw lane
         pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
@@ -439,10 +448,10 @@ class LaneFinder:
         distance_from_center = abs((image.shape[1] / 2 - position) * self.xm_per_pix)
 
         # Calculate curve radius from left curve radius and right curve radius
-        cureve_radius = int((self.leftLine.radius + self.rightLine.radius) / 2)
+        curve_radius = int((self.leftLine.radius + self.rightLine.radius) / 2)
 
         lane_position = "Lane Position: {:.2f}m".format(distance_from_center)
-        lane_curvature = "Lane Curvature Radius: {:.2f}m".format(cureve_radius)
+        lane_curvature = "Lane Curvature Radius: {:.2f}m".format(curve_radius)
 
         font = cv2.FONT_HERSHEY_SIMPLEX
         cv2.putText(image, lane_position, (30, 40), font, 1, (255, 255, 255), 2)
