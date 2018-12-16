@@ -215,8 +215,8 @@ class LaneFinder:
         undist_img = image_processor.undistort(image)
         birds_eye_img = image_processor.warp(undist_img)
         binary_img = image_processor.get_binary_image(birds_eye_img)
-        self._find_lane_points(binary_img, nwindows=9, margin=100, minpix=50)
-        lane_overlay = self._draw_lane(birds_eye_img)
+        lane_overlay = self._find_lane_points(binary_img, birds_eye_img, nwindows=9, margin=100, minpix=50)
+        # lane_overlay = self._draw_lane(birds_eye_img)
         lane_overlay = image_processor.unwarp(lane_overlay)
         output_img = self._combinbe_images(undist_img, lane_overlay)
         self._draw_curvature_and_position(output_img)
@@ -320,20 +320,22 @@ class LaneFinder:
     @staticmethod
     def _check_lines_parallel(left_x, rigth_x, threashold=100):
         delta_x = []
-        for i in range(len(left_x)-1):
+        for i in range(len(left_x) - 1):
             delta_x.append(abs(rigth_x[i] - left_x[i]))
         delta_x = np.array(delta_x)
         delta_x -= delta_x.min()
         return delta_x.max() < threashold
 
-    def _find_lane_points(self, binary_warped, nwindows, margin, minpix):
+    def _find_lane_points(self, binary_warped, birds_eye_img, nwindows, margin, minpix, color=(0, 255, 0)):
+
+        left_detected = False
+        right_detected = False
+
         if self.leftLine.detected:
-            leftx, lefty, self.leftLine.detected = self._search_around_poly(binary_warped, self.leftLine.last_fit,
-                                                                            margin)
+            leftx, lefty, left_detected = self._search_around_poly(binary_warped, self.leftLine.last_fit, margin)
 
         if self.rightLine.detected:
-            rightx, righty, self.rightLine.detected = self._search_around_poly(binary_warped, self.rightLine.last_fit,
-                                                                               margin)
+            rightx, righty, right_detected = self._search_around_poly(binary_warped, self.rightLine.last_fit, margin)
 
         if not self.leftLine.detected or not self.rightLine.detected:
             # Take a histogram of the bottom half of the image
@@ -346,15 +348,17 @@ class LaneFinder:
             right_half = histogram[midpoint:]
 
             self.leftLine.x_base = np.argmax(left_half)
-            leftx, lefty, self.leftLine.detected = self._blind_search(
+            leftx, lefty, left_detected = self._blind_search(
                 binary_warped, self.leftLine.x_base, nwindows, margin, minpix)
 
             self.rightLine.x_base = np.argmax(right_half) + midpoint
-            rightx, righty, self.rightLine.detected = self._blind_search(
+            rightx, righty, right_detected = self._blind_search(
                 binary_warped, self.rightLine.x_base, nwindows, margin, minpix)
 
-        if not self.leftLine.detected or not self.rightLine.detected:
-            return  # skip if no lines detected
+        if not left_detected or not right_detected:
+            self.leftLine.detected = left_detected
+            self.rightLine.detected = right_detected
+            return birds_eye_img  # skip if no lines detected
 
         lefty = np.array(lefty).astype(np.float32)
         leftx = np.array(leftx).astype(np.float32)
@@ -368,13 +372,6 @@ class LaneFinder:
         # Calculate intercepts to extend the polynomial to the top and bottom of warped image
         left_x_bottom, left_x_top = self._get_intercepts(left_fit, binary_warped.shape[0])
         right_x_bottom, right_x_top = self._get_intercepts(right_fit, binary_warped.shape[0])
-
-        # Average intercepts across n frames
-        self.leftLine.x_int.append(left_x_bottom)
-        self.leftLine.last_x_int = np.mean(self.leftLine.x_int)
-
-        self.rightLine.x_int.append(right_x_bottom)
-        self.rightLine.last_x_int = np.mean(self.rightLine.x_int)
 
         # Add averaged intercepts to current x and y vals
         leftx = np.append(leftx, left_x_bottom)
@@ -391,11 +388,35 @@ class LaneFinder:
         leftx, lefty = self._sort_by_y_vals(leftx, lefty)
         rightx, righty = self._sort_by_y_vals(rightx, righty)
 
+        ploty = np.linspace(0, binary_warped.shape[0] - 1, binary_warped.shape[0])
+        left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
+        rigth_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
+
+        if not self._check_lines_parallel(left_fitx, rigth_fitx, threashold=100):
+            self.leftLine.detected = left_detected
+            self.rightLine.detected = right_detected
+            return birds_eye_img  # skip
+
+        # Recast the x and y points into usable format for cv2.fillPoly() and draw lane
+        pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
+        pts_right = np.array([np.flipud(np.transpose(np.vstack([rigth_fitx, ploty])))])
+        pts = np.hstack((pts_left, pts_right))
+        color_warp = np.zeros_like(birds_eye_img).astype(np.uint8)
+        cv2.fillPoly(color_warp, np.int_([pts]), color)
+
+        # update lines
         self.leftLine.X = leftx
         self.leftLine.Y = lefty
 
         self.rightLine.X = rightx
         self.rightLine.Y = righty
+
+        # Average intercepts across n frames
+        self.leftLine.x_int.append(left_x_bottom)
+        self.leftLine.last_x_int = np.mean(self.leftLine.x_int)
+
+        self.rightLine.x_int.append(right_x_bottom)
+        self.rightLine.last_x_int = np.mean(self.rightLine.x_int)
 
         # Recalculate polynomial with intercepts and average across n frames
         self.leftLine.last_fit = np.polyfit(lefty, leftx, 2)
@@ -408,23 +429,8 @@ class LaneFinder:
         self.leftLine.count += 1
         self.rightLine.count += 1
 
-    def _draw_lane(self, image, color=(0, 255, 0)):
-        color_warp = np.zeros_like(image).astype(np.uint8)
-
-        ploty = np.linspace(0, image.shape[0] - 1, image.shape[0])
-        left_fitx = self.leftLine.last_fit[0] * ploty ** 2 + self.leftLine.last_fit[1] * ploty + \
-                    self.leftLine.last_fit[2]
-        rigth_fitx = self.rightLine.last_fit[0] * ploty ** 2 + self.rightLine.last_fit[1] * ploty + \
-                     self.rightLine.last_fit[2]
-
-        if not self._check_lines_parallel(left_fitx, rigth_fitx, threashold=100):
-            return  # skip
-
-        # Recast the x and y points into usable format for cv2.fillPoly()
-        pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
-        pts_right = np.array([np.flipud(np.transpose(np.vstack([rigth_fitx, ploty])))])
-        pts = np.hstack((pts_left, pts_right))
-        cv2.fillPoly(color_warp, np.int_([pts]), color)
+        self.leftLine.detected = left_detected
+        self.rightLine.detected = right_detected
 
         return color_warp
 
