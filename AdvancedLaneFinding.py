@@ -189,21 +189,21 @@ class Line:
 
         # Store recent x intercepts for averaging across frames
         self.x_int = deque(maxlen=n)
-        self.top = deque(maxlen=n)
+        # self.top = deque(maxlen=n)
 
         # Remember previous x intercept to compare against current one
         self.last_x_int = None
-        self.last_top = None
+        # self.last_top = None
 
         # Remember radius of curvature
         self.radius = None
 
         # Store recent polynomial coefficients for averaging across frames
-        self.fit0 = deque(maxlen=n)
-        self.fit1 = deque(maxlen=n)
-        self.fit2 = deque(maxlen=n)
-        self.fitx = None
-        self.pts = []
+        # self.fit0 = deque(maxlen=n)
+        # self.fit1 = deque(maxlen=n)
+        # self.fit2 = deque(maxlen=n)
+        self.last_fit = None
+        # self.pts = []
 
         # Count the number of frames
         self.count = 0
@@ -327,11 +327,11 @@ class LaneFinder:
     def _find_lane_points(self, binary_warped, nwindows, margin, minpix):
 
         if self.leftLine.detected:
-            leftx, lefty, self.leftLine.detected = self._search_around_poly(binary_warped, self.leftLine.fitx,
+            leftx, lefty, self.leftLine.detected = self._search_around_poly(binary_warped, self.leftLine.last_fit,
                                                                             margin)
 
         if self.rightLine.detected:
-            rightx, righty, self.rightLine.detected = self._search_around_poly(binary_warped, self.rightLine.fitx,
+            rightx, righty, self.rightLine.detected = self._search_around_poly(binary_warped, self.rightLine.last_fit,
                                                                                margin)
 
         if not self.leftLine.detected or not self.rightLine.detected:
@@ -368,12 +368,12 @@ class LaneFinder:
         right_x_int, right_top = self._get_intercepts(right_fit, binary_warped.shape[0])
 
         # Average intercepts across n frames
-        # self.leftLine.x_int.append(left_x_int)
+        self.leftLine.x_int.append(left_x_int)
         # self.leftLine.top.append(left_top)
         self.leftLine.last_x_int = np.mean(self.leftLine.x_int)
         # self.leftLine.last_top = np.mean(self.leftLine.top)
         #
-        # self.rightLine.x_int.append(right_x_int)
+        self.rightLine.x_int.append(right_x_int)
         # self.rightLine.top.append(right_top)
         self.rightLine.last_x_int = np.mean(self.rightLine.x_int)
         # self.rightLine.last_top = np.mean(self.rightLine.top)
@@ -417,8 +417,8 @@ class LaneFinder:
         #             np.mean(Left.fit2)]
 
         # Fit polynomial to detected pixels
-        self.leftLine.fitx = left_fit[0] * lefty ** 2 + left_fit[1] * lefty + left_fit[2]
-        self.rightLine.fitx = right_fit[0] * righty ** 2 + right_fit[1] * righty + right_fit[2]
+        self.leftLine.last_fit = left_fit
+        self.rightLine.last_fit = right_fit
 
         # Compute radius of curvature for each lane in meters
         self.leftLine.radius = self._get_curve_radius(leftx, lefty)
@@ -430,9 +430,13 @@ class LaneFinder:
     def _draw_lane(self, image, color=(0, 255, 0)):
         color_warp = np.zeros_like(image).astype(np.uint8)
 
+        ploty = np.linspace(0, image.shape[0] - 1, image.shape[0])
+        left_fitx = self.leftLine.last_fit[0] * ploty ** 2 + self.leftLine.last_fit[1] * ploty + self.leftLine.last_fit[2]
+        rigth_fitx = self.rightLine.last_fit[0] * ploty ** 2 + self.rightLine.last_fit[1] * ploty + self.rightLine.last_fit[2]
+
         # Recast the x and y points into usable format for cv2.fillPoly()
-        pts_left = np.array([np.transpose(np.vstack([self.leftLine.fitx, self.leftLine.Y]))])
-        pts_right = np.array([np.flipud(np.transpose(np.vstack([self.rightLine.fitx, self.rightLine.Y])))])
+        pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
+        pts_right = np.array([np.flipud(np.transpose(np.vstack([rigth_fitx, ploty])))])
         pts = np.hstack((pts_left, pts_right))
         cv2.fillPoly(color_warp, np.int_([pts]), color)
 
