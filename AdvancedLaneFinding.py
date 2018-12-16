@@ -407,7 +407,7 @@ class LaneFinder:
         left_radius = self._get_curve_radius(leftx, lefty)
         right_radius = self._get_curve_radius(rightx, righty)
 
-        # sanity check
+        # Sanity check
         if not self._lines_sanity_check(left_fitx, rigth_fitx, left_radius, right_radius):
             self.leftLine.detected = False
             self.rightLine.detected = False
@@ -423,7 +423,7 @@ class LaneFinder:
         color_warp = np.zeros_like(birds_eye_img).astype(np.uint8)
         cv2.fillPoly(color_warp, np.int_([pts]), color)
 
-        # update lines
+        # Update lines
         self.leftLine.X = leftx
         self.leftLine.Y = lefty
 
@@ -437,7 +437,7 @@ class LaneFinder:
         self.rightLine.x_int.append(right_x_bottom)
         self.rightLine.last_x_int = np.mean(self.rightLine.x_int)
 
-        # Recalculate polynomial with intercepts and average across n frames
+        # Recalculate polynomial with intercepts
         self.leftLine.last_fit = np.polyfit(lefty, leftx, 2)
         self.rightLine.last_fit = np.polyfit(righty, rightx, 2)
 
@@ -450,8 +450,8 @@ class LaneFinder:
         return color_warp
 
     def _draw_curvature_and_position(self, image):
-        if not self.leftLine.detected or not self.rightLine.detected:
-            return  # skip if no lines detected
+        # if not self.leftLine.detected or not self.rightLine.detected:
+        #     return  # skip if no lines detected
 
         # Calculate the vehicle position relative to the center of the lane
         position = (self.leftLine.last_x_int + self.rightLine.last_x_int) / 2
