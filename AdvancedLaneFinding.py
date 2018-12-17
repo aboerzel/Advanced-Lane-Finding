@@ -130,7 +130,6 @@ class ImageProcessor:
         # imgHLS = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
         imgHLS = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
         # Hue (0,180) Light (0,255), satur (0,255)
-
         # 3) Return a binary image of threshold result
         binary_output = np.zeros((image.shape[0], image.shape[1]))
         binary_output[(imgHLS[:, :, 0] >= thresh_low[0]) & (imgHLS[:, :, 0] <= thresh_high[0]) & (
@@ -168,12 +167,12 @@ class ImageProcessor:
         white_low = np.array([18, 0, 180])
         white_high = np.array([255, 80, 255])
 
-        imgThres_yellow = self._hls_color_thresh(image, yellow_low, yellow_high)
-        imgThres_white = self._hls_color_thresh(image, white_low, white_high)
-        imgThr_sobelx = self._sobel_x(image, kernel=9, thresh=(80, 220))
+        img_thres_yellow = self._hls_color_thresh(image, yellow_low, yellow_high)
+        img_thres_white = self._hls_color_thresh(image, white_low, white_high)
+        img_thres_sobelx = self._sobel_x(image, kernel=9, thresh=(80, 220))
 
-        binary_image = np.zeros_like(imgThres_yellow)
-        binary_image[(imgThres_yellow == 1) | (imgThres_white == 1) | (imgThr_sobelx == 1)] = 1
+        binary_image = np.zeros_like(img_thres_yellow)
+        binary_image[(img_thres_yellow == 1) | (img_thres_white == 1) | (img_thres_sobelx == 1)] = 1
         return binary_image
 
 
@@ -216,7 +215,7 @@ class LaneFinder:
         undist_img = image_processor.undistort(image)
         birds_eye_img = image_processor.warp(undist_img)
         binary_img = image_processor.get_binary_image(birds_eye_img)
-        warped_lane_img = self._find_lane_points(binary_img, birds_eye_img, nwindows=9, margin=100, minpix=50)
+        warped_lane_img = self._find_lane_points(binary_img, birds_eye_img, nwindows=10, margin=100, minpix=50)
         unwarped_lane_img = image_processor.unwarp(warped_lane_img)
         output_img = self._combinbe_images(undist_img, unwarped_lane_img)
         self._draw_curvature_and_position(output_img)
@@ -276,7 +275,7 @@ class LaneFinder:
         # Extract line pixel positions
         x = nonzerox[lane_inds]
         y = nonzeroy[lane_inds]
-        return x, y, np.sum(x) > 0
+        return x, y
 
     # HYPERPARAMETER
     # margin : width of the margin around the previous polynomial to search
@@ -297,7 +296,7 @@ class LaneFinder:
         # extract line pixel positions
         x = nonzerox[lane_inds]
         y = nonzeroy[lane_inds]
-        return x, y, np.sum(x) > 0
+        return x, y
 
     @staticmethod
     def _get_intercepts(polynomial, image_height):
@@ -319,7 +318,7 @@ class LaneFinder:
 
     @staticmethod
     def _lines_sanity_check(left_x, rigth_x, left_radius, right_radius, parallelism=20, min_distance=300,
-                            max_distance=700, max_radius_diff=5000):
+                            max_distance=650, max_radius_diff=2000):
         delta_x = []
         for i in range(len(left_x) - 1):
             delta_x.append(abs(rigth_x[i] - left_x[i]))
@@ -346,12 +345,10 @@ class LaneFinder:
     def _find_lane_points(self, binary_warped, birds_eye_img, nwindows, margin, minpix, color=(0, 255, 0)):
 
         if self.leftLine.detected:
-            leftx, lefty, self.leftLine.detected = self._search_around_poly(
-                binary_warped, self.leftLine.last_fit, margin)
+            leftx, lefty = self._search_around_poly(binary_warped, self.leftLine.last_fit, margin)
 
         if self.rightLine.detected:
-            rightx, righty, self.rightLine.detected = self._search_around_poly(
-                binary_warped, self.rightLine.last_fit, margin)
+            rightx, righty = self._search_around_poly(binary_warped, self.rightLine.last_fit, margin)
 
         if not self.leftLine.detected or not self.rightLine.detected:
             # Take a histogram of the bottom half of the image
@@ -364,12 +361,10 @@ class LaneFinder:
             right_half = histogram[midpoint:]
 
             self.leftLine.x_base = np.argmax(left_half)
-            leftx, lefty, self.leftLine.detected = self._blind_search(
-                binary_warped, self.leftLine.x_base, nwindows, margin, minpix)
+            leftx, lefty = self._blind_search(binary_warped, self.leftLine.x_base, nwindows, margin, minpix)
 
             self.rightLine.x_base = np.argmax(right_half) + midpoint
-            rightx, righty, self.rightLine.detected = self._blind_search(
-                binary_warped, self.rightLine.x_base, nwindows, margin, minpix)
+            rightx, righty = self._blind_search(binary_warped, self.rightLine.x_base, nwindows, margin, minpix)
 
         lefty = np.array(lefty).astype(np.float32)
         leftx = np.array(leftx).astype(np.float32)
@@ -448,6 +443,9 @@ class LaneFinder:
 
         self.leftLine.count += 1
         self.rightLine.count += 1
+
+        self.leftLine.detected = self
+        self.rightLine.detected = self
 
         return color_warp
 
