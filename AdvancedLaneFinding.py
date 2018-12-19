@@ -76,8 +76,12 @@ class ImageProcessor:
     def __init__(self, camera_calibator):
         self.camera_calibator = camera_calibator
         self.image_size = self.camera_calibator.get_image_size()
+
+        # build vertices for perspective transformation
         self.src_points = self._get_src_points(self.image_size)
         self.dst_points = self._get_dst_points(self.image_size)
+
+        # build warp matrix and inverse warp matrix
         self.M, self.invM = self._get_warp_matrices(self.src_points, self.dst_points)
 
     @staticmethod
@@ -124,44 +128,7 @@ class ImageProcessor:
         return cv2.undistort(image, mtx, dist, None, mtx)
 
     @staticmethod
-    def _hls_color_thresh(image, thresh_low, thresh_high):
-        # 1) Convert to HLS color space
-        # imgHLS = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
-        imgHLS = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
-        # Hue (0,180) Light (0,255), satur (0,255)
-        # 3) Return a binary image of threshold result
-        binary_output = np.zeros((image.shape[0], image.shape[1]))
-        binary_output[(imgHLS[:, :, 0] >= thresh_low[0]) & (imgHLS[:, :, 0] <= thresh_high[0]) & (
-                imgHLS[:, :, 1] >= thresh_low[1]) & (imgHLS[:, :, 1] <= thresh_high[1]) & (
-                              imgHLS[:, :, 2] >= thresh_low[2]) & (imgHLS[:, :, 2] <= thresh_high[2])] = 1
-        return binary_output
-
-    @staticmethod
-    def _sobel_x(image, kernel=3, thresh=(20, 100)):
-        # 1) Convert to grayscale
-        imghsl = cv2.cvtColor(image, cv2.COLOR_RGB2HLS)
-        # 2) Take the gradient in x and y separately
-        # Channels L and S from HLS
-        sobelx1 = cv2.Sobel(imghsl[:, :, 1], cv2.CV_64F, 1, 0, ksize=kernel)
-        sobelx2 = cv2.Sobel(imghsl[:, :, 2], cv2.CV_64F, 1, 0, ksize=kernel)
-
-        # 4) Scale to 8-bit (0 - 255) and convert to type = np.uint8
-        scaled_sobelx1 = np.uint8(255 * sobelx1 / np.max(sobelx1))
-        scaled_sobelx2 = np.uint8(255 * sobelx2 / np.max(sobelx2))
-
-        # 5) Create a binary mask where mag thresholds are met
-        binary_outputx1 = np.zeros_like(scaled_sobelx1)
-        binary_outputx1[(scaled_sobelx1 >= thresh[0]) & (scaled_sobelx1 <= thresh[1])] = 1
-
-        binary_outputx2 = np.zeros_like(scaled_sobelx2)
-        binary_outputx2[(scaled_sobelx2 >= thresh[0]) & (scaled_sobelx2 <= thresh[1])] = 1
-
-        binary_output = np.zeros_like(scaled_sobelx1)
-        binary_output[(binary_outputx1 == 1) | (binary_outputx2 == 1)] = 1
-        return binary_output
-
-    @staticmethod
-    def abs_sobel_thresh1(gray, orient='x', sobel_kernel=3, thresh=(0, 255)):
+    def abs_sobel_thresh(gray, orient='x', sobel_kernel=3, thresh=(0, 255)):
         # Calculate directional gradient
         # 1) Take the derivative in x or y given orient = 'x' or 'y'
         if orient == 'x':
@@ -186,8 +153,8 @@ class ImageProcessor:
         light_mask = np.zeros_like(L)
         light_mask[(S >= 5) & (L >= 130)] = 1
 
-        gradx_l = self.abs_sobel_thresh1(L, orient='x', sobel_kernel=3, thresh=(25, 100))
-        gradx_s = self.abs_sobel_thresh1(S, orient='x', sobel_kernel=3, thresh=(10, 100))
+        gradx_l = self.abs_sobel_thresh(L, orient='x', sobel_kernel=3, thresh=(25, 100))
+        gradx_s = self.abs_sobel_thresh(S, orient='x', sobel_kernel=3, thresh=(10, 100))
 
         binary_image = np.zeros_like(gradx_s)
         # For some images S channel works better, while for others L channel does
@@ -224,11 +191,12 @@ class LaneFinder:
         binary_img = image_processor.get_binary_image(undist_img)
         birds_eye_img = image_processor.warp(binary_img)
 
+        # find lane points
         leftx, lefty, rightx, righty, detected = self._find_lane_points(
             birds_eye_img, self.leftLine.last_fit, self.rightLine.last_fit, nwindows=9, margin=100, minpix=50)
 
         if not detected:
-            # use values from previous frame
+            # if no points detected use values from previous frame
             leftx = self.leftLine.X
             lefty = self.leftLine.Y
             rightx = self.rightLine.X
@@ -242,13 +210,13 @@ class LaneFinder:
         left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
         rigth_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
 
-        # Compute radius of curvature for each lane in meters
+        # Compute radius of curvature and distance from center in meters
         curve_radius, distance_from_center = self._get_curve_radius_and_distance_from_center(
             leftx, lefty, rightx, righty, undist_img.shape)
 
         # Sanity check
-        if self.count > 0 and not self._lines_sanity_check(left_fitx, rigth_fitx):
-            # use values from previous frame
+        if self.count > 0 and not self._lanes_sanity_check(left_fitx, rigth_fitx):
+            # if sanity check failed use values from previous frame
             leftx = self.leftLine.X
             lefty = self.leftLine.Y
             rightx = self.rightLine.X
@@ -256,7 +224,7 @@ class LaneFinder:
         else:
             self.count += 1
 
-        # Recast the x and y points into usable format for cv2.fillPoly() and draw lane
+        # fill area between lanes
         pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
         pts_right = np.array([np.flipud(np.transpose(np.vstack([rigth_fitx, ploty])))])
         pts = np.hstack((pts_left, pts_right))
@@ -426,21 +394,20 @@ class LaneFinder:
 
         return curve_radius_m, distance_from_center
 
-    # Evaluates polynomial and finds value at given point
     @staticmethod
     def get_x_at_y(line_fit, line_y):
         poly = np.poly1d(line_fit)
         return poly(line_y)
 
     @staticmethod
-    def _lines_sanity_check(left_x, rigth_x, parallelism=260, min_distance=300, max_distance=650):
+    def _lanes_sanity_check(left_x, right_x, parallelism=260, min_distance=300, max_distance=650):
         delta_x = []
         for i in range(len(left_x) - 1):
-            delta_x.append(abs(rigth_x[i] - left_x[i]))
+            delta_x.append(abs(right_x[i] - left_x[i]))
         delta_x = np.array(delta_x)
 
         # check horizontal lane distance
-        # the horizontal distance between the two lanes should be rather constant
+        # the horizontal distance between the two lanes should be rather constant (between min and max)
         delta_min = delta_x.min()
         delta_max = delta_x.max()
         if delta_min < min_distance or delta_max > max_distance:
