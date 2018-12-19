@@ -381,8 +381,8 @@ class LaneFinder:
         curve_radius_m = int((left_radius_m + right_radius_m) / 2)
 
         # Calculate bottom points for each lane
-        left_fitx_bottom_m = self.get_x_at_y(left_fit_cr, image_shape[0] * self.ym_per_pix)
-        right_fitx_bottom_m = self.get_x_at_y(right_fit_cr, image_shape[0] * self.ym_per_pix)
+        left_fitx_bottom_m = self._get_x_at_y(left_fit_cr, image_shape[0] * self.ym_per_pix)
+        right_fitx_bottom_m = self._get_x_at_y(right_fit_cr, image_shape[0] * self.ym_per_pix)
 
         # Calculate image center, in meters
         center_ideal_m = image_shape[1] * self.xm_per_pix / 2
@@ -395,7 +395,7 @@ class LaneFinder:
         return curve_radius_m, distance_from_center
 
     @staticmethod
-    def get_x_at_y(line_fit, line_y):
+    def _get_x_at_y(line_fit, line_y):
         poly = np.poly1d(line_fit)
         return poly(line_y)
 
