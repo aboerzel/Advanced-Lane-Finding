@@ -1,8 +1,7 @@
+import argparse
 import glob
 import os
 import pickle
-import argparse
-from collections import deque
 
 import cv2
 import matplotlib.image as mpimg
@@ -161,27 +160,46 @@ class ImageProcessor:
         binary_output[(binary_outputx1 == 1) | (binary_outputx2 == 1)] = 1
         return binary_output
 
+    @staticmethod
+    def abs_sobel_thresh1(gray, orient='x', sobel_kernel=3, thresh=(0, 255)):
+        # Calculate directional gradient
+        # 1) Take the derivative in x or y given orient = 'x' or 'y'
+        if orient == 'x':
+            sobel = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
+        else:
+            sobel = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
+        # 2) Take the absolute value of the derivative or gradient
+        abs_sobel = np.absolute(sobel)
+        # 3) Scale to 8-bit (0 - 255) then convert to type = np.uint8
+        scaled_sobel = np.uint8(255 * abs_sobel / np.max(abs_sobel))
+        # 4) Create a mask of 1's where the scaled gradient magnitude
+        # is > thresh_min and < thresh_max
+        sxbinary = np.zeros_like(scaled_sobel)
+        sxbinary[(scaled_sobel >= thresh[0]) & (scaled_sobel <= thresh[1])] = 1
+        return sxbinary
+
     def get_binary_image(self, image):
-        yellow_low = np.array([0, 100, 100])
-        yellow_high = np.array([50, 255, 255])
-        white_low = np.array([18, 0, 180])
-        white_high = np.array([255, 80, 255])
+        hls = cv2.cvtColor(image, cv2.COLOR_BGR2HLS)
+        S = hls[:, :, 2]
+        L = hls[:, :, 1]
 
-        img_thres_yellow = self._hls_color_thresh(image, yellow_low, yellow_high)
-        img_thres_white = self._hls_color_thresh(image, white_low, white_high)
-        img_thres_sobelx = self._sobel_x(image, kernel=9, thresh=(80, 220))
+        light_mask = np.zeros_like(L)
+        light_mask[(S >= 5) & (L >= 130)] = 1
 
-        binary_image = np.zeros_like(img_thres_yellow)
-        binary_image[(img_thres_yellow == 1) | (img_thres_white == 1) | (img_thres_sobelx == 1)] = 1
+        gradx_l = self.abs_sobel_thresh1(L, orient='x', sobel_kernel=3, thresh=(25, 100))
+        gradx_s = self.abs_sobel_thresh1(S, orient='x', sobel_kernel=3, thresh=(10, 100))
+
+        binary_image = np.zeros_like(gradx_s)
+        # For some images S channel works better, while for others L channel does
+        # combine binary masks
+        binary_image[((gradx_l == 1) | (gradx_s == 1)) & (light_mask == 1)] = 1
         return binary_image
 
 
 class Line:
 
-    def __init__(self, name, n=10):
+    def __init__(self, name):
         self.name = name
-        # Was the line found in the previous frame?
-        self.detected = False
 
         # x and y values of lanes in previous frame
         self.X = None
@@ -190,17 +208,6 @@ class Line:
         # polynomial coefficients for previous frame
         self.last_fit = None
 
-        # recent x intercepts for averaging across frames
-        self.x_int = deque(maxlen=n)
-        # previous x intercept to compare against current one
-        self.last_x_int = None
-
-        # Remember radius of curvature
-        self.radius = None
-
-        # Count the number of frames
-        self.count = 0
-
 
 class LaneFinder:
 
@@ -208,17 +215,74 @@ class LaneFinder:
         self.image_processor = image_processor
         self.leftLine = Line("left")
         self.rightLine = Line("right")
+        self.count = 0
         self.ym_per_pix = 3 / 88  # meters per pixel in y dimension
         self.xm_per_pix = 3.7 / 630  # meters per pixel in x dimension
 
     def process(self, image):
         undist_img = image_processor.undistort(image)
-        birds_eye_img = image_processor.warp(undist_img)
-        binary_img = image_processor.get_binary_image(birds_eye_img)
-        warped_lane_img = self._find_lane_points(binary_img, birds_eye_img, nwindows=10, margin=100, minpix=50)
-        unwarped_lane_img = image_processor.unwarp(warped_lane_img)
-        output_img = self._combinbe_images(undist_img, unwarped_lane_img)
-        self._draw_curvature_and_position(output_img)
+        binary_img = image_processor.get_binary_image(undist_img)
+        birds_eye_img = image_processor.warp(binary_img)
+
+        leftx, lefty, rightx, righty, detected = self._find_lane_points(
+            birds_eye_img, self.leftLine.last_fit, self.rightLine.last_fit, nwindows=9, margin=100, minpix=50)
+
+        if not detected:
+            # use values from previous frame
+            leftx = self.leftLine.X
+            lefty = self.leftLine.Y
+            rightx = self.rightLine.X
+            righty = self.rightLine.Y
+
+        # Calculate polynomial fit based on detected pixels
+        left_fit = np.polyfit(lefty, leftx, 2)
+        right_fit = np.polyfit(righty, rightx, 2)
+
+        ploty = np.linspace(0, birds_eye_img.shape[0] - 1, birds_eye_img.shape[0])
+        left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
+        rigth_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
+
+        # Compute radius of curvature for each lane in meters
+        curve_radius, distance_from_center = self._get_curve_radius_and_distance_from_center(
+            leftx, lefty, rightx, righty, undist_img.shape)
+
+        # Sanity check
+        if self.count > 0 and not self._lines_sanity_check(left_fitx, rigth_fitx):
+            # use values from previous frame
+            leftx = self.leftLine.X
+            lefty = self.leftLine.Y
+            rightx = self.rightLine.X
+            righty = self.rightLine.Y
+        else:
+            self.count += 1
+
+        # Recast the x and y points into usable format for cv2.fillPoly() and draw lane
+        pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
+        pts_right = np.array([np.flipud(np.transpose(np.vstack([rigth_fitx, ploty])))])
+        pts = np.hstack((pts_left, pts_right))
+        lanes_img = np.zeros_like(undist_img).astype(np.uint8)
+        cv2.fillPoly(lanes_img, np.int_([pts]), color=(0, 255, 0))
+
+        # Update lines
+        self.leftLine.X = leftx
+        self.leftLine.Y = lefty
+        self.rightLine.X = rightx
+        self.rightLine.Y = righty
+
+        self.leftLine.last_fit = left_fit
+        self.rightLine.last_fit = right_fit
+
+        unwarped_lanes_img = image_processor.unwarp(lanes_img)
+        output_img = self._combinbe_images(undist_img, unwarped_lanes_img)
+
+        # print curve radius and distance from center
+        lane_position = "Lane Position: {:.2f}m".format(distance_from_center)
+        lane_curvature = "Lane Curvature Radius: {:d}m".format(int(round(curve_radius)))
+
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        cv2.putText(output_img, lane_position, (30, 40), font, 1, (255, 255, 255), 2)
+        cv2.putText(output_img, lane_curvature, (30, 80), font, 1, (255, 255, 255), 2)
+
         return output_img
 
     @staticmethod
@@ -230,7 +294,20 @@ class LaneFinder:
     # margin   : width of the windows +/- margin
     # minpix   : minmum number of pixels found to recenter window
     @staticmethod
-    def _blind_search(binary_warped, x_base, nwindows=9, margin=100, minpix=50):
+    def _blind_search(binary_warped, nwindows=9, margin=100, minpix=50):
+
+        # Take a histogram of the bottom half of the image
+        histogram = np.sum(binary_warped[binary_warped.shape[0] // 2:, :], axis=0)
+
+        # Find the peak of the left and right halves of the histogram
+        # These will be the starting point for the left and right lines
+        midpoint = np.int(histogram.shape[0] // 2)
+        left_half = histogram[:midpoint]
+        right_half = histogram[midpoint:]
+
+        left_x_base = np.argmax(left_half)
+        right_x_base = np.argmax(right_half) + midpoint
+
         # Set height of windows - based on nwindows above and image shape
         window_height = np.int(binary_warped.shape[0] // nwindows)
         # Identify the x and y positions of all nonzero pixels in the image
@@ -239,48 +316,56 @@ class LaneFinder:
         nonzerox = np.array(nonzero[1])
 
         # Current positions to be updated later for each window in nwindows
-        x_current = x_base
+        leftx_current = left_x_base
+        rightx_current = right_x_base
 
-        # Create empty lists to receive lane pixel indices
-        lane_inds = []
+        # Create empty lists to receive left and right lane pixel indices
+        left_lane_inds = []
+        right_lane_inds = []
 
         # Step through the windows one by one
         for window in range(nwindows):
-            # Identify window boundaries in x and y
+            # Identify window boundaries in x and y (and right and left)
             win_y_low = binary_warped.shape[0] - (window + 1) * window_height
             win_y_high = binary_warped.shape[0] - window * window_height
 
-            # Find the four below boundaries of the window
-            win_x_low = x_current - margin
-            win_x_high = x_current + margin
+            # Find the four below boundaries of the window #
+            win_xleft_low = leftx_current - margin
+            win_xleft_high = leftx_current + margin
+            win_xright_low = rightx_current - margin
+            win_xright_high = rightx_current + margin
 
-            # Identify the nonzero pixels in x and y within the window
-            good_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) &
-                         (nonzerox >= win_x_low) & (nonzerox < win_x_high)).nonzero()[0]
+            # Identify the nonzero pixels in x and y within the window #
+            good_left_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) &
+                              (nonzerox >= win_xleft_low) & (nonzerox < win_xleft_high)).nonzero()[0]
+            good_right_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) &
+                               (nonzerox >= win_xright_low) & (nonzerox < win_xright_high)).nonzero()[0]
 
-            # Append these indices to the list
-            lane_inds.append(good_inds)
+            # Append these indices to the lists
+            left_lane_inds.append(good_left_inds)
+            right_lane_inds.append(good_right_inds)
 
-            # If you found > minpix pixels, recenter next window
-            if len(good_inds) > minpix:
-                x_current = np.int(np.mean(nonzerox[good_inds]))
+            # If you found > minpix pixels, recenter next window #
+            if len(good_left_inds) > minpix:
+                leftx_current = np.int(np.mean(nonzerox[good_left_inds]))
+            if len(good_right_inds) > minpix:
+                rightx_current = np.int(np.mean(nonzerox[good_right_inds]))
 
         # Concatenate the arrays of indices (previously was a list of lists of pixels)
-        try:
-            lane_inds = np.concatenate(lane_inds)
-        except ValueError:
-            # Avoids an error if the above is not implemented fully
-            pass
+        left_lane_inds = np.concatenate(left_lane_inds)
+        right_lane_inds = np.concatenate(right_lane_inds)
 
-        # Extract line pixel positions
-        x = nonzerox[lane_inds]
-        y = nonzeroy[lane_inds]
-        return x, y
+        # Extract left and right line pixel positions
+        leftx = nonzerox[left_lane_inds]
+        lefty = nonzeroy[left_lane_inds]
+        rightx = nonzerox[right_lane_inds]
+        righty = nonzeroy[right_lane_inds]
+        return leftx, lefty, rightx, righty, (sum(leftx) > 0 and sum(rightx) > 0)
 
     # HYPERPARAMETER
     # margin : width of the margin around the previous polynomial to search
     @staticmethod
-    def _search_around_poly(binary_warped, last_fit, margin=100):
+    def _search_around_last_fit(binary_warped, left_fit, right_fit, margin=100):
         # Grab activated pixels
         nonzero = binary_warped.nonzero()
         nonzeroy = np.array(nonzero[0])
@@ -290,179 +375,85 @@ class LaneFinder:
         # within the +/- margin of our polynomial function
         # Hint: consider the window areas for the similarly named variables
         # in the previous quiz, but change the windows to our new search area
-        lane_inds = ((nonzerox > (last_fit[0] * (nonzeroy ** 2) + last_fit[1] * nonzeroy + last_fit[2] - margin)) &
-                     (nonzerox < (last_fit[0] * (nonzeroy ** 2) + last_fit[1] * nonzeroy + last_fit[2] + margin)))
+        left_lane_inds = ((nonzerox > (left_fit[0] * (nonzeroy ** 2) + left_fit[1] * nonzeroy + left_fit[2] - margin)) &
+                          (nonzerox < (left_fit[0] * (nonzeroy ** 2) + left_fit[1] * nonzeroy + left_fit[2] + margin)))
+
+        right_lane_inds = (
+                (nonzerox > (right_fit[0] * (nonzeroy ** 2) + right_fit[1] * nonzeroy + right_fit[2] - margin)) &
+                (nonzerox < (right_fit[0] * (nonzeroy ** 2) + right_fit[1] * nonzeroy + right_fit[2] + margin)))
 
         # extract line pixel positions
-        x = nonzerox[lane_inds]
-        y = nonzeroy[lane_inds]
-        return x, y
+        left_x = nonzerox[left_lane_inds]
+        left_y = nonzeroy[left_lane_inds]
+        right_x = nonzerox[right_lane_inds]
+        right_y = nonzeroy[right_lane_inds]
+        return left_x, left_y, right_x, right_y, (sum(left_x) > 0 and sum(right_x) > 0)
+
+    def _find_lane_points(self, binary_warped, left_fit, right_fit, nwindows, margin, minpix):
+
+        if left_fit is not None or right_fit is not None:
+            leftx, lefty, rightx, righty, detected = self._search_around_last_fit(
+                binary_warped, left_fit, right_fit, margin)
+            if detected:
+                return leftx, lefty, rightx, righty, detected
+
+        return self._blind_search(binary_warped, nwindows, margin, minpix)
+
+    def _get_curve_radius_and_distance_from_center(self, left_x, left_y, right_x, right_y, image_shape):
+        left_fit_cr = np.polyfit(left_y * self.ym_per_pix, left_x * self.xm_per_pix, 2)
+        right_fit_cr = np.polyfit(right_y * self.ym_per_pix, right_x * self.xm_per_pix, 2)
+
+        left_radius_m = ((1 + (2 * left_fit_cr[0] * np.max(left_y) + left_fit_cr[1]) ** 2) ** 1.5) / np.absolute(
+            2 * left_fit_cr[0])
+
+        right_radius_m = ((1 + (2 * right_fit_cr[0] * np.max(left_y) + right_fit_cr[1]) ** 2) ** 1.5) / np.absolute(
+            2 * right_fit_cr[0])
+
+        # Calculate curve radius from left curve radius and right curve radius
+        curve_radius_m = int((left_radius_m + right_radius_m) / 2)
+
+        # Calculate bottom points for each lane
+        left_fitx_bottom_m = self.get_x_at_y(left_fit_cr, image_shape[0] * self.ym_per_pix)
+        right_fitx_bottom_m = self.get_x_at_y(right_fit_cr, image_shape[0] * self.ym_per_pix)
+
+        # Calculate image center, in meters
+        center_ideal_m = image_shape[1] * self.xm_per_pix / 2
+        # Calculate actual center of the lane, in meters
+        center_actual_m = np.mean([left_fitx_bottom_m, right_fitx_bottom_m])
+
+        # Calculate distance from center, in meters
+        distance_from_center = abs(center_ideal_m - center_actual_m)
+
+        return curve_radius_m, distance_from_center
+
+    # Evaluates polynomial and finds value at given point
+    @staticmethod
+    def get_x_at_y(line_fit, line_y):
+        poly = np.poly1d(line_fit)
+        return poly(line_y)
 
     @staticmethod
-    def _get_intercepts(polynomial, image_height):
-        bottom = polynomial[0] * image_height ** 2 + polynomial[1] * image_height + polynomial[2]
-        top = polynomial[2]
-        return bottom, top
-
-    @staticmethod
-    def _sort_by_y_vals(xvals, yvals):
-        sorted_index = np.argsort(yvals)
-        sorted_yvals = yvals[sorted_index]
-        sorted_xvals = xvals[sorted_index]
-        return sorted_xvals, sorted_yvals
-
-    def _get_curve_radius(self, xvals, yvals):
-        fit_cr = np.polyfit(yvals * self.ym_per_pix, xvals * self.xm_per_pix, 2)
-        radius = ((1 + (2 * fit_cr[0] * np.max(yvals) + fit_cr[1]) ** 2) ** 1.5) / np.absolute(2 * fit_cr[0])
-        return radius
-
-    @staticmethod
-    def _lines_sanity_check(left_x, rigth_x, left_radius, right_radius, parallelism=20, min_distance=300,
-                            max_distance=650, max_radius_diff=2000):
+    def _lines_sanity_check(left_x, rigth_x, parallelism=260, min_distance=300, max_distance=650):
         delta_x = []
         for i in range(len(left_x) - 1):
             delta_x.append(abs(rigth_x[i] - left_x[i]))
         delta_x = np.array(delta_x)
 
-        # check similar curvature
-        if abs(left_radius - right_radius) > max_radius_diff:
-            return False
-
-        # check distance
+        # check horizontal lane distance
+        # the horizontal distance between the two lanes should be rather constant
         delta_min = delta_x.min()
         delta_max = delta_x.max()
         if delta_min < min_distance or delta_max > max_distance:
             return False
 
-        # check parallelism
+        # check lane parallelism
+        # if the lanes are parallel, all horizontal distances should be rather equal
         delta_x -= delta_min
         delta_max = delta_x.max()
-        if delta_max < parallelism:
+        if delta_max > parallelism:
             return False
 
         return True
-
-    def _find_lane_points(self, binary_warped, birds_eye_img, nwindows, margin, minpix, color=(0, 255, 0)):
-
-        if self.leftLine.detected:
-            leftx, lefty = self._search_around_poly(binary_warped, self.leftLine.last_fit, margin)
-
-        if self.rightLine.detected:
-            rightx, righty = self._search_around_poly(binary_warped, self.rightLine.last_fit, margin)
-
-        if not self.leftLine.detected or not self.rightLine.detected:
-            # Take a histogram of the bottom half of the image
-            histogram = np.sum(binary_warped[binary_warped.shape[0] // 2:, :], axis=0)
-
-            # Find the peak of the left and right halves of the histogram
-            # These will be the starting point for the left and right lines
-            midpoint = np.int(histogram.shape[0] // 2)
-            left_half = histogram[:midpoint]
-            right_half = histogram[midpoint:]
-
-            self.leftLine.x_base = np.argmax(left_half)
-            leftx, lefty = self._blind_search(binary_warped, self.leftLine.x_base, nwindows, margin, minpix)
-
-            self.rightLine.x_base = np.argmax(right_half) + midpoint
-            rightx, righty = self._blind_search(binary_warped, self.rightLine.x_base, nwindows, margin, minpix)
-
-        lefty = np.array(lefty).astype(np.float32)
-        leftx = np.array(leftx).astype(np.float32)
-        righty = np.array(righty).astype(np.float32)
-        rightx = np.array(rightx).astype(np.float32)
-
-        # Calculate polynomial fit based on detected pixels
-        left_fit = np.polyfit(lefty, leftx, 2)
-        right_fit = np.polyfit(righty, rightx, 2)
-
-        # Calculate intercepts to extend the polynomial to the top and bottom of warped image
-        left_x_bottom, left_x_top = self._get_intercepts(left_fit, binary_warped.shape[0])
-        right_x_bottom, right_x_top = self._get_intercepts(right_fit, binary_warped.shape[0])
-
-        # Add averaged intercepts to current x and y values
-        leftx = np.append(leftx, left_x_bottom)
-        leftx = np.append(leftx, left_x_top)
-        lefty = np.append(lefty, 0)  # y value for x_bottom
-        lefty = np.append(lefty, binary_warped.shape[0])  # y value for x_top
-
-        rightx = np.append(rightx, right_x_bottom)
-        rightx = np.append(rightx, right_x_top)
-        righty = np.append(righty, 0)  # y value for x_bottom
-        righty = np.append(righty, binary_warped.shape[0])  # y value for x_top
-
-        # Sort detected pixels by y values
-        leftx, lefty = self._sort_by_y_vals(leftx, lefty)
-        rightx, righty = self._sort_by_y_vals(rightx, righty)
-
-        ploty = np.linspace(0, binary_warped.shape[0] - 1, binary_warped.shape[0])
-        left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
-        rigth_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
-
-        # Compute radius of curvature for each lane in meters
-        left_radius = self._get_curve_radius(leftx, lefty)
-        right_radius = self._get_curve_radius(rightx, righty)
-
-        # Sanity check
-        if not self._lines_sanity_check(left_fitx, rigth_fitx, left_radius, right_radius):
-            # use blind search for next frame
-            self.leftLine.detected = False
-            self.rightLine.detected = False
-            # use values from previous frame
-            leftx = self.leftLine.X
-            lefty = self.leftLine.Y
-            rightx = self.rightLine.X
-            righty = self.rightLine.Y
-
-        # Recast the x and y points into usable format for cv2.fillPoly() and draw lane
-        pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
-        pts_right = np.array([np.flipud(np.transpose(np.vstack([rigth_fitx, ploty])))])
-        pts = np.hstack((pts_left, pts_right))
-        color_warp = np.zeros_like(birds_eye_img).astype(np.uint8)
-        cv2.fillPoly(color_warp, np.int_([pts]), color)
-
-        # Update lines
-        self.leftLine.X = leftx
-        self.leftLine.Y = lefty
-
-        self.rightLine.X = rightx
-        self.rightLine.Y = righty
-
-        # Average intercepts across n frames
-        self.leftLine.x_int.append(left_x_bottom)
-        self.leftLine.last_x_int = np.mean(self.leftLine.x_int)
-
-        self.rightLine.x_int.append(right_x_bottom)
-        self.rightLine.last_x_int = np.mean(self.rightLine.x_int)
-
-        # Recalculate polynomial with intercepts
-        self.leftLine.last_fit = np.polyfit(lefty, leftx, 2)
-        self.rightLine.last_fit = np.polyfit(righty, rightx, 2)
-
-        self.leftLine.radius = left_radius
-        self.rightLine.radius = right_radius
-
-        self.leftLine.count += 1
-        self.rightLine.count += 1
-
-        self.leftLine.detected = self
-        self.rightLine.detected = self
-
-        return color_warp
-
-    def _draw_curvature_and_position(self, image):
-        # Calculate the vehicle position relative to the center of the lane
-        position = (self.leftLine.last_x_int + self.rightLine.last_x_int) / 2
-        distance_from_center = abs((image.shape[1] / 2 - position) * self.xm_per_pix)
-
-        # Calculate curve radius from left curve radius and right curve radius
-        curve_radius = int((self.leftLine.radius + self.rightLine.radius) / 2)
-
-        lane_position = "Lane Position: {:.2f}m".format(distance_from_center)
-        lane_curvature = "Lane Curvature Radius: {:d}m".format(int(round(curve_radius)))
-
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        cv2.putText(image, lane_position, (30, 40), font, 1, (255, 255, 255), 2)
-        cv2.putText(image, lane_curvature, (30, 80), font, 1, (255, 255, 255), 2)
 
 
 image_processor = ImageProcessor(CameraCalibator())
