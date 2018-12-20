@@ -128,7 +128,7 @@ class ImageProcessor:
         return cv2.undistort(image, mtx, dist, None, mtx)
 
     @staticmethod
-    def abs_sobel_thresh(gray, orient='x', sobel_kernel=3, thresh=(0, 255)):
+    def abs_sobel_threshold(gray, orient='x', sobel_kernel=3, thresh=(0, 255)):
         # Calculate directional gradient
         # 1) Take the derivative in x or y given orient = 'x' or 'y'
         if orient == 'x':
@@ -151,10 +151,10 @@ class ImageProcessor:
         L = hls[:, :, 1]
 
         light_mask = np.zeros_like(L)
-        light_mask[(S >= 5) & (L >= 130)] = 1
+        light_mask[(S >= 6) & (L >= 78)] = 1
 
-        gradx_l = self.abs_sobel_thresh(L, orient='x', sobel_kernel=3, thresh=(25, 100))
-        gradx_s = self.abs_sobel_thresh(S, orient='x', sobel_kernel=3, thresh=(10, 100))
+        gradx_l = self.abs_sobel_threshold(L, orient='x', sobel_kernel=3, thresh=(17, 40))
+        gradx_s = self.abs_sobel_threshold(S, orient='x', sobel_kernel=3, thresh=(7, 47))
 
         binary_image = np.zeros_like(gradx_s)
         # For some images S channel works better, while for others L channel does
