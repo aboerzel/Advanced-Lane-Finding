@@ -53,9 +53,9 @@ My solution consists of the following steps:
 
 ### Camera Calibration
 
-The code for this step is contained in the class `CameraCalibator`.  
+The code for this step is contained in the class `CameraCalibrator`.  
 
-The `CameraCalibator` uses the chessboard images in `camera_cal/*.jpg` to calculate the distortion coefficients. 
+The `CameraCalibrator` uses the chessboard images in `camera_cal/*.jpg` to calculate the distortion coefficients. 
 
 For technical reasons, every camera delivers images with some distortions. These distortions are systematic errors that are the same for every image taken with the same camera. Thus, the distortion in each single image can be corrected, if the deviation between the image supplied by the camera and the correct image without distortion is known.
 To determine this difference, some pictures of a known chessboard pattern from different perspectives are made with the camera. For each of these images, the crossing points can be determined using the `cv2.findChessboardCorners()` function.
@@ -66,7 +66,7 @@ Distored chessboard image, taken from the camera
 ![alt text][image1]
 
 
-Unistored chessboard image, corrected using the calibration coefficients determined with the `CameraCalibator`
+Unistored chessboard image, corrected using the calibration coefficients determined with the `CameraCalibrator`
 ![alt text][image2]
 
 ### Pipeline (single image)

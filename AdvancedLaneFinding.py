@@ -15,7 +15,7 @@ ap.add_argument("-v", "--video", help="input video")
 args = vars(ap.parse_args())
 
 
-class CameraCalibator:
+class CameraCalibrator:
 
     def __init__(self, camera_cal_images_folder='camera_cal',
                  grid_size=(9, 6), image_size=(720, 1280),
@@ -73,9 +73,9 @@ class CameraCalibator:
 
 
 class ImageProcessor:
-    def __init__(self, camera_calibator):
-        self.camera_calibator = camera_calibator
-        self.image_size = self.camera_calibator.get_image_size()
+    def __init__(self, camera_calibrator):
+        self.camera_calibrator = camera_calibrator
+        self.image_size = self.camera_calibrator.get_image_size()
 
         # build vertices for perspective transformation
         self.src_points = self._get_src_points(self.image_size)
@@ -124,7 +124,7 @@ class ImageProcessor:
         return warped
 
     def undistort(self, image):
-        mtx, dist = self.camera_calibator.get_calibration()
+        mtx, dist = self.camera_calibrator.get_calibration()
         return cv2.undistort(image, mtx, dist, None, mtx)
 
     @staticmethod
@@ -423,7 +423,7 @@ class LaneFinder:
         return True
 
 
-image_processor = ImageProcessor(CameraCalibator())
+image_processor = ImageProcessor(CameraCalibrator())
 lane_finder = LaneFinder(image_processor)
 
 
