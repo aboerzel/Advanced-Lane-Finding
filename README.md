@@ -33,9 +33,9 @@ The goals / steps of this project are the following:
 
 ### Solution and Results
 
-* The whole source source code of my solution is located in the file [AdvancedLaneFinding.py](AdvancedLaneFinding.py)
+The whole source source code of my solution is located in the file [AdvancedLaneFinding.py](AdvancedLaneFinding.py)
 
-#####Usage:
+Usage:
 
 To find lanes in an image file use the following command:\
 ```python AdvancedLaneFinding.py -i test1.jpj``` \
@@ -45,7 +45,8 @@ To find lanes in an video file use the following command:\
 ```python AdvancedLaneFinding.py -v project_video.mp4```  \
 The result image will be stored in `output_videos` (with same name)
 
-* The solution can be found in [AdvancedLaneFinding.ipynb](AdvancedLaneFinding.ipynb)
+
+The solution can be found in [AdvancedLaneFinding.ipynb](AdvancedLaneFinding.ipynb)
 
 
 ###My solution consists of the following steps:
