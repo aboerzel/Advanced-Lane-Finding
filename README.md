@@ -49,7 +49,7 @@ The result image will be stored in `output_videos` (with same name)
 The solution can be found in [AdvancedLaneFinding.ipynb](AdvancedLaneFinding.ipynb)
 
 
-###My solution consists of the following steps:
+My solution consists of the following steps:
 
 ### Camera Calibration
 
