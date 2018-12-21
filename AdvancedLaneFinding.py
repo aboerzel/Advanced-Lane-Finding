@@ -160,7 +160,7 @@ class ImageProcessor:
         # For some images S channel works better, while for others L channel does
         # combine binary masks
         binary_image[((gradx_l == 1) | (gradx_s == 1)) & (light_mask == 1)] = 1
-        return binary_image
+        return binary_image * 255
 
 
 class Line:
