@@ -1,5 +1,7 @@
 # Advanced Lane Finding Project
 
+## Udacity Self Driving Car Engineer Nanodegree - Project 2
+
 The goals / steps of this project are the following:
 
 * Compute the camera calibration matrix and distortion coefficients given a set of chessboard images.
@@ -63,11 +65,12 @@ With the obtained crossing points and the ideal crossing points (known from the 
 Once you know the calibration coefficients of a camera, any image taken with this camera can be corrected using the `cv2.undistort()` function.
 
 Distored chessboard image, taken from the camera
-![alt text][image1]
-
-
 Unistored chessboard image, corrected using the calibration coefficients determined with the `CameraCalibrator`
-![alt text][image2]
+
+|Distored chessboard image|Unistored chessboard image|
+|-------------|-------------|
+|![alt text][image1]|![alt text][image2]
+
 
 ### Pipeline (single image)
 
@@ -120,10 +123,10 @@ dst = get_dst_points(binary_image.shape)
 
 I verified that my perspective transform was working as expected by drawing the `src` and `dst` points onto a test image and its warped counterpart to verify that the lines appear parallel in the warped image.
 
-![alt text][image6]
+|Binary Image with ROI|Warped Binary Image with ROI|
+|-------------|-------------|
+|![alt text][image6]|![alt text][image7]|
 
-Warped Binary...
-![alt text][image7]
 
 #### 4. Describe how (and identify where in your code) you identified lane-line pixels and fit their positions with a polynomial?
 
@@ -184,10 +187,16 @@ I implemented this step in lines # through # in my code in `yet_another_file.py`
 
 #### 1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (wobbly lines are ok but no catastrophic failures that would cause the car to drive off the road!).
 
-Here's a [link to my video result][video1]
+Project Video:
+
+[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/2knXG4NVFrs/0.jpg)](https://youtu.be/2knXG4NVFrs)
+
+
+Challenge Video:
+
+[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/G2aUz1D2bBY/0.jpg)](https://youtu.be/G2aUz1D2bBY)
 
 ---
-
 ### Discussion
 
 #### 1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
