@@ -67,7 +67,7 @@ Once you know the calibration coefficients of a camera, any image taken with thi
 Distored chessboard image, taken from the camera
 Unistored chessboard image, corrected using the calibration coefficients determined with the `CameraCalibrator`
 
-|Distored chessboard image|Unistored chessboard image|
+|Raw chessboard image|Unistored chessboard image|
 |-------------|-------------|
 |![alt text][image1]|![alt text][image2]
 
@@ -116,9 +116,29 @@ def get_dst_points(image_size):
                       [width - margin, height]])
     return dst
     
+def get_warp_matrices(src_points, dst_points):
+    M = cv2.getPerspectiveTransform(src_points, dst_points)
+    Minv = cv2.getPerspectiveTransform(dst_points, src_points)
+    return M, Minv
+        
+def warp(image):
+    img_size = (image.shape[1], image.shape[0])
+    warped = cv2.warpPerspective(image, M, img_size)
+    return warped
+
+def unwarp(image):
+    img_size = (image.shape[1], image.shape[0])
+    warped = cv2.warpPerspective(image, invM, img_size)
+    return warped
+        
 # get points for perspective transformation
 src = get_src_points(binary_image.shape)
 dst = get_dst_points(binary_image.shape)  
+
+# build warp matrix and inverse warp matrix
+M, invM = get_warp_matrices(src, dst)
+
+binary_warped = warp(binary_image)
 ```
 
 I verified that my perspective transform was working as expected by drawing the `src` and `dst` points onto a test image and its warped counterpart to verify that the lines appear parallel in the warped image.
@@ -147,7 +167,7 @@ Search around last fit
 I did this in lines # through # in my code in `my_other_file.py`
 
 ```python
-def _get_curve_radius_and_distance_from_center(self, left_x, left_y, right_x, right_y, image_shape):
+def get_curve_radius_and_distance_from_center(self, left_x, left_y, right_x, right_y, image_shape):
     left_fit_cr = np.polyfit(left_y * self.ym_per_pix, left_x * self.xm_per_pix, 2)
     right_fit_cr = np.polyfit(right_y * self.ym_per_pix, right_x * self.xm_per_pix, 2)
 
@@ -173,6 +193,10 @@ def _get_curve_radius_and_distance_from_center(self, left_x, left_y, right_x, ri
     distance_from_center = abs(center_ideal_m - center_actual_m)
 
     return curve_radius_m, distance_from_center
+    
+# Compute radius of curvature and distance from center in meters
+curve_radius, distance_from_center = get_curve_radius_and_distance_from_center(
+    leftx, lefty, rightx, righty, undist_img.shape)
 ```
 
 #### 6. Provide an example image of your result plotted back down onto the road such that the lane area is identified clearly.
