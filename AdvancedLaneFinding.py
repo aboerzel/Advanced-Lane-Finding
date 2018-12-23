@@ -183,8 +183,8 @@ class LaneFinder:
         self.leftLine = Line("left")
         self.rightLine = Line("right")
         self.count = 0
-        self.ym_per_pix = 3 / 88  # meters per pixel in y dimension
-        self.xm_per_pix = 3.7 / 630  # meters per pixel in x dimension
+        self.ym_per_pix = 30 / 720  # meters per pixel in y dimension
+        self.xm_per_pix = 3.7 / 700  # meters per pixel in x dimension
 
     def process(self, image):
         undist_img = image_processor.undistort(image)

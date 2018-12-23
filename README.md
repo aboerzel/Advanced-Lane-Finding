@@ -108,7 +108,10 @@ The code for the image transformation is located in the class `ImageProcessor`
 
 #### 3. Perspective Transform
 
-The code for my perspective transform includes a function called `warper()`, which appears in lines 1 through 8 in the file `example.py` (output_images/examples/example.py) (or, for example, in the 3rd code cell of the IPython notebook).  The `warper()` function takes as inputs an image (`img`), as well as source (`src`) and destination (`dst`) points.  I chose the hardcode the source and destination points in the following manner:
+The code for my perspective transform appears in lines 100 through 124 in the file `AdvancedLaneFinding.py`. 
+
+I create a warp matrix using the function `get_warp_matrices()` with the required source and destination points obtained with the functions `get_src_points()` and `get_dst_points()`.
+Then I create the bird's eye view using the `warp()` function. The `warp()` function uses the warp matrix to calculate the bird's eye view using OpenCV'S function `cv2.warpPerspectiv()`.
 
 ```python
 def get_src_points(image_size):
@@ -178,52 +181,35 @@ Histogram
 Search around last fit
 ![alt text][image12]
 
-#### 5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
+#### 5. Calculate radius of curvature and position of the vehicle with respect to center.
 
-I did this in lines # through # in my code in `my_other_file.py`
+Radius of curvature:
 
-```python
-def get_curve_radius_and_distance_from_center(self, left_x, left_y, right_x, right_y, image_shape):
-    left_fit_cr = np.polyfit(left_y * self.ym_per_pix, left_x * self.xm_per_pix, 2)
-    right_fit_cr = np.polyfit(right_y * self.ym_per_pix, right_x * self.xm_per_pix, 2)
+To calculate radius of curvature in meters, the x and y values have to be converted from pixels to meter. I use the `xm_per_pix=3.7/700` m/pixel in the x-direction and `ym_per_pix=30/720` m/pixel in the x-direction to convert the pixels in meters.
 
-    left_radius_m = ((1 + (2 * left_fit_cr[0] * np.max(left_y) + left_fit_cr[1]) ** 2) ** 1.5) / np.absolute(
-        2 * left_fit_cr[0])
-
-    right_radius_m = ((1 + (2 * right_fit_cr[0] * np.max(left_y) + right_fit_cr[1]) ** 2) ** 1.5) / np.absolute(
-        2 * right_fit_cr[0])
-
-    # Calculate curve radius from left curve radius and right curve radius
-    curve_radius_m = int((left_radius_m + right_radius_m) / 2)
-
-    # Calculate bottom points for each lane
-    left_fitx_bottom_m = self._get_x_at_y(left_fit_cr, image_shape[0] * self.ym_per_pix)
-    right_fitx_bottom_m = self._get_x_at_y(right_fit_cr, image_shape[0] * self.ym_per_pix)
-
-    # Calculate image center, in meters
-    center_ideal_m = image_shape[1] * self.xm_per_pix / 2
-    # Calculate actual center of the lane, in meters
-    center_actual_m = np.mean([left_fitx_bottom_m, right_fitx_bottom_m])
-
-    # Calculate distance from center, in meters
-    distance_from_center = abs(center_ideal_m - center_actual_m)
-
-    return curve_radius_m, distance_from_center
-    
-# Compute radius of curvature and distance from center in meters
-curve_radius, distance_from_center = get_curve_radius_and_distance_from_center(
-    leftx, lefty, rightx, righty, undist_img.shape)
-```
+Afterwards the radius of left and the right lane is calculated using the formula: `Rcurve​ = (1 + (2Ay + B)^2)^3/2​ / ∣2A∣`
+The radius of the road is then calculated from the arithmetic mean of the radii of the left and right curve.
+<br>
+<br>
+Position of the vehicle with respect to center:
+<br>
+<br>
+First I calculate the x-coordinates of the left and right lane lines at the bottom of the image in meter. The mean of the two x-coordinates is the actual position of the vehicle. 
+Then I find the distance from the center of the image (in meters) to that middle of the lane position. That distance is the center offset.
+<br>
+<br>
+I did this step in lines 370 through 395 in my code in `AdvancedLaneFinding.py` in the function `_get_curve_radius_and_distance_from_center()` of the `LaneFinder` class. 
 
 #### 6. Provide an example image of your result plotted back down onto the road such that the lane area is identified clearly.
 
-I implemented this step in lines # through # in my code in `yet_another_file.py` in the function `map_lane()`.  Here is an example of my result on a test image:
+I implemented this step in lines 243 through 252 in my code in `AdvancedLaneFinding.py` in the function `process()` of the `LaneFinder` class.  Here is an example of my result on a test image:
 
 ![alt text][image13]
 
 ---
 
 ### Pipeline (video)
+Result videos:
 
 |Project Video|Challenge Video|
 |-------------|-------------|
