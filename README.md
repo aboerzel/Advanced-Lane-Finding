@@ -167,18 +167,23 @@ I verified that my perspective transform was working as expected by drawing the 
 |![alt text][image8]|![alt text][image9]|
 
 
-#### 4. Describe how (and identify where in your code) you identified lane-line pixels and fit their positions with a polynomial?
+#### 4. Finding Lane Lines
 
-Then I did some other stuff and fit my lane lines with a 2nd order polynomial kinda like this:
+I implemented this step in lines 260 through 368 in my code in `AdvancedLaneFinding.py` in the functions `_find_lane_points()`, `_search_around_last_fit()` and `_blind_search()` of the `LaneFinder` class.
 
-Sliding Window Search
-![alt text][image10]
-
-Histogram
+I use the sliding window search as described in the classroom samples to find the lane lines. First a histogram of the bird's eye view is created and split into a left and right half. The maximum peak of each half are the startpoints for the sliding window search.
+<br>
+<br>
+Histogram of the bird's eye view:
 
 ![alt text][image11]
 
-Search around last fit
+The result of the sliding window search looks like this:
+![alt text][image10]
+
+The sliding window search works well, but is very expensive. For this reason, the sliding window search is only used to determine the first point. Thereafter, it is searched only in a small window starting from the previous point, which is much more efficient. If the search fails at one point, the sliding window search must be applied again.
+
+The result of the search around the last fit looks like this:
 ![alt text][image12]
 
 #### 5. Calculate radius of curvature and position of the vehicle with respect to center.
@@ -220,4 +225,10 @@ Result videos:
 
 #### 1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
 
-Here I'll talk about the approach I took, what techniques I used, what worked and why, where the pipeline might fail and how I might improve it if I were going to pursue this project further.  
+The current solution works well for the project video, but the environmental conditions (roads, lighting conditions, lane markings) in the project video are excellent, so the lanes are relatively easy to detect.
+
+The Challence video is a bit more difficult, here are some shadow throws and longitudinal stripes that run parallel to the lanes, which make the lane detection much more difficult. Although the current solution works quite passably, there are already some outliers.
+
+I think the real life is like the harder challenge video. There are extremely many shadow throws here. Often one of the two lanes is in extreme brightness, while the other lane is in the shade. There are also numerous tight curves and gradients.
+
+I think it is a challenge to create suitable binary images that are still reliable for lane detection even in the difficult lighting conditions.
