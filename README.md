@@ -19,13 +19,15 @@ The goals / steps of this project are the following:
 [image2]: ./output_images/undist_calibration1.jpg "Undist_Calibration1"
 [image3]: ./output_images/original.jpg "Original"
 [image4]: ./output_images/undistort.jpg "Undistorted"
-[image5]: ./output_images/binary.jpg "Binary Example"
-[image6]: ./output_images/roi_binary.jpg "ROI Binary"
-[image7]: ./output_images/roi_warped_binary.jpg "ROI Warped Binary"
-[image8]: ./output_images/binary_warped_sliding_window.jpg "Sliding Window"
-[image9]: ./output_images/histogram.jpg "Histogramm"
-[image10]: ./output_images/binary_warped_search_around_poly.jpg "Search Arounf Poly"
-[image11]: ./output_images/final_image.jpg "Final Image"
+[image5]: ./output_images/l_binary.jpg "L-binary"
+[image6]: ./output_images/s_binary.jpg "S-binary"
+[image7]: ./output_images/binary.jpg "Binary Example"
+[image8]: ./output_images/roi_binary.jpg "ROI Binary"
+[image9]: ./output_images/roi_warped_binary.jpg "ROI Warped Binary"
+[image10]: ./output_images/binary_warped_sliding_window.jpg "Sliding Window"
+[image11]: ./output_images/histogram.jpg "Histogramm"
+[image12]: ./output_images/binary_warped_search_around_poly.jpg "Search Arounf Poly"
+[image13]: ./output_images/final_image.jpg "Final Image"
 
 [video1]: ./output_videos/project_video.mp4 "Video"
 
@@ -48,49 +50,63 @@ To find lanes in an video file use the following command:\
 The result image will be stored in `output_videos` (with same name)
 
 
-The solution can be found in [AdvancedLaneFinding.ipynb](AdvancedLaneFinding.ipynb)
-
-
+I used the [AdvancedLaneFinding.ipynb](AdvancedLaneFinding.ipynb) for prototyping the camera calibration and the lane detetion. In particular, for testing various color transformations and gradients to produce a suitable binary image for lane detection.
+<br>
+<br>
 My solution consists of the following steps:
 
 ### Camera Calibration
-
-The code for this step is contained in the class `CameraCalibrator`.  
-
-The `CameraCalibrator` uses the chessboard images in `camera_cal/*.jpg` to calculate the distortion coefficients. 
 
 For technical reasons, every camera delivers images with some distortions. These distortions are systematic errors that are the same for every image taken with the same camera. Thus, the distortion in each single image can be corrected, if the deviation between the image supplied by the camera and the correct image without distortion is known.
 To determine this difference, some pictures of a known chessboard pattern from different perspectives are made with the camera. For each of these images, the crossing points can be determined using the `cv2.findChessboardCorners()` function.
 With the obtained crossing points and the ideal crossing points (known from the chessboard pattern), the `cv2.calibrateCamera()` function can be used to calculate the calibration coefficients for this camera.
 Once you know the calibration coefficients of a camera, any image taken with this camera can be corrected using the `cv2.undistort()` function.
 
-Distored chessboard image, taken from the camera
-Unistored chessboard image, corrected using the calibration coefficients determined with the `CameraCalibrator`
+The code for this step is contained in the class `CameraCalibrator`. The CameraCalibrator uses the chessboard images in `camera_cal/*.jpg` to calculate the calibration coefficients. 
+
+The following sample shows the raw chessboard image `calibration1.jpg`, taken from the camera and the unistored chessboard image, corrected using the calibration coefficients determined with the `CameraCalibrator`
 
 |Raw chessboard image|Unistored chessboard image|
 |-------------|-------------|
 |![alt text][image1]|![alt text][image2]
 
 
-### Pipeline (single image)
+### Image Pipeline
 
-The code for the image transformations is located in the class `ImageProcessor`. 
+The code for the image pipeline is located in the classes `LaneFinder` and `ImageProcessor`. 
 
-The image pipeline will be demonstrated with the sample image 'test5.jpg`
+Here's a demonstration of how the image pipeline works, based on the sample image `challenge_video_3.jpg`
 ![alt text][image3]
 
-#### 1. Provide an example of a distortion-corrected image.
-
-To demonstrate this step, I will describe how I apply the distortion correction to one of the test images like this one:
+#### 1. Distortion Correction
+First, the original image supplied by the camera is corrected using the `cv2.undistort()` function. This is done using the camara-calibration coefficients obtained during camera calibration. The result looks like this:
 ![alt text][image4]
 
-#### 2. Describe how (and identify where in your code) you used color transforms, gradients or other methods to create a thresholded binary image.  Provide an example of a binary image result.
+#### 2. Create Binary Image for Lane Detection.
 
-I used a combination of color and gradient thresholds to generate a binary image (thresholding steps at lines # through # in `another_file.py`).  Here's an example of my output for this step.  (note: this is not actually from one of the test images)
-
+Now a binary image for the lane detection is generated from the undistort image.
+For this I use the L- (lightness) and the S-channel (saturation) from the HLS color space.
+<br>
+<br>
+Binary image created using the L-channel:
 ![alt text][image5]
+The L-channel detects both white and yellow lines on bright roads. But on dark roads, the L-channel fails completely on yellow lines.
+<br>
+<br>
+Binary image created using the S-channel:
+![alt text][image6]
+The S-channel recognizes white lines very bad, however it can recognize yellow lines on dark roads.
+<br>
+<br>
+If both channels are combined, both white and yellow lines can be recognized on light and dark roads.
+<br>
+<br>
+Final binary image used for line detection.
+![alt text][image7]
 
-#### 3. Describe how (and identify where in your code) you performed a perspective transform and provide an example of a transformed image.
+The code for the image transformation is located in the class `ImageProcessor`
+
+#### 3. Perspective Transform
 
 The code for my perspective transform includes a function called `warper()`, which appears in lines 1 through 8 in the file `example.py` (output_images/examples/example.py) (or, for example, in the 3rd code cell of the IPython notebook).  The `warper()` function takes as inputs an image (`img`), as well as source (`src`) and destination (`dst`) points.  I chose the hardcode the source and destination points in the following manner:
 
@@ -145,7 +161,7 @@ I verified that my perspective transform was working as expected by drawing the 
 
 |Binary Image with ROI|Warped Binary Image with ROI|
 |-------------|-------------|
-|![alt text][image6]|![alt text][image7]|
+|![alt text][image8]|![alt text][image9]|
 
 
 #### 4. Describe how (and identify where in your code) you identified lane-line pixels and fit their positions with a polynomial?
@@ -153,14 +169,14 @@ I verified that my perspective transform was working as expected by drawing the 
 Then I did some other stuff and fit my lane lines with a 2nd order polynomial kinda like this:
 
 Sliding Window Search
-![alt text][image8]
+![alt text][image10]
 
 Histogram
 
-![alt text][image9]
+![alt text][image11]
 
 Search around last fit
-![alt text][image10]
+![alt text][image12]
 
 #### 5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
 
@@ -203,22 +219,15 @@ curve_radius, distance_from_center = get_curve_radius_and_distance_from_center(
 
 I implemented this step in lines # through # in my code in `yet_another_file.py` in the function `map_lane()`.  Here is an example of my result on a test image:
 
-![alt text][image11]
+![alt text][image13]
 
 ---
 
 ### Pipeline (video)
 
-#### 1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (wobbly lines are ok but no catastrophic failures that would cause the car to drive off the road!).
-
-Project Video:
-
-[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/2knXG4NVFrs/0.jpg)](https://youtu.be/2knXG4NVFrs)
-
-
-Challenge Video:
-
-[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/G2aUz1D2bBY/0.jpg)](https://youtu.be/G2aUz1D2bBY)
+|Project Video|Challenge Video|
+|-------------|-------------|
+|[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/2knXG4NVFrs/0.jpg)](https://youtu.be/2knXG4NVFrs)|[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/G2aUz1D2bBY/0.jpg)](https://youtu.be/G2aUz1D2bBY)|
 
 ---
 ### Discussion
