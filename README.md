@@ -50,14 +50,14 @@ To find lanes in an video file use the following command:\
 The result image will be stored in `output_videos` (with same name)
 
 
-I used the [AdvancedLaneFinding.ipynb](AdvancedLaneFinding.ipynb) for prototyping the camera calibration and the lane detetion. In particular, for testing various color transformations and gradients to produce a suitable binary image for lane detection.
+I used the [AdvancedLaneFinding.ipynb](AdvancedLaneFinding.ipynb) for prototyping the camera calibration and the lane detection, in particular for testing various color transformations and gradients to produce a suitable binary image for lane detection.
 <br>
 <br>
 My solution consists of the following steps:
 
 ### Camera Calibration
 
-For technical reasons, every camera delivers images with some distortions. These distortions are systematic errors that are the same for every image taken with the same camera. Thus, the distortion in each single image can be corrected, if the deviation between the image supplied by the camera and the correct image without distortion is known.
+For technical reasons, every camera delivers images with some distortions. These distortions are systematic errors that are the same for every image taken with the same camera. Thus, the distortion of each single image can be corrected, if the deviation between the image supplied by the camera and the correct image without distortion is known.
 To determine this difference, some pictures of a known chessboard pattern from different perspectives are made with the camera. For each of these images, the crossing points can be determined using the `cv2.findChessboardCorners()` function.
 With the obtained crossing points and the ideal crossing points (known from the chessboard pattern), the `cv2.calibrateCamera()` function can be used to calculate the calibration coefficients for this camera.
 Once you know the calibration coefficients of a camera, any image taken with this camera can be corrected using the `cv2.undistort()` function.
@@ -79,7 +79,7 @@ Here's a demonstration of how the image pipeline works, based on the sample imag
 ![alt text][image3]
 
 #### 1. Distortion Correction
-First, the original image supplied by the camera is corrected using the `cv2.undistort()` function. This is done using the camara-calibration coefficients obtained during camera calibration. The result looks like this:
+First, the raw image supplied by the camera is corrected using the `cv2.undistort()` function. This is done using the camara-calibration coefficients obtained during camera calibration. The result looks like this:
 ![alt text][image4]
 
 #### 2. Create Binary Image for Lane Detection.
@@ -171,17 +171,17 @@ I verified that my perspective transform was working as expected by drawing the 
 
 I implemented this step in lines 260 through 368 in my code in `AdvancedLaneFinding.py` in the functions `_find_lane_points()`, `_search_around_last_fit()` and `_blind_search()` of the `LaneFinder` class.
 
-I use the sliding window search as described in the classroom samples to find the lane lines. First a histogram of the bird's eye view is created and split into a left and right half. The maximum peak of each half are the startpoints for the sliding window search.
+I use the sliding window search as described in the classroom examples to find the lane lines. First a histogram of the bird's eye view is created and split into a left and right half. The maximum peak of each half are the startpoints for the sliding window search.
 <br>
 <br>
-Histogram of the bird's eye view:
+The histogram of the bird's eye view shows the two startpoints for the sliding window search:
 
 ![alt text][image11]
 
 The result of the sliding window search looks like this:
 ![alt text][image10]
 
-The sliding window search works well, but is very expensive. For this reason, the sliding window search is only used to determine the first point. Thereafter, it is searched only in a small window starting from the previous point, which is much more efficient. If the search fails at one point, the sliding window search must be applied again.
+The sliding window search works well, but its very expensive. For this reason, the sliding window search is only used to determine the polynomial coefficients of the first frame. Thereafter, its searched only in a small distance from the polyline from the previous frame, which is much more efficient. If the search fails at one point, the sliding window search must be applied again.
 
 The result of the search around the last fit looks like this:
 ![alt text][image12]
@@ -207,7 +207,7 @@ I did this step in lines 370 through 395 in my code in `AdvancedLaneFinding.py` 
 
 #### 6. Provide an example image of your result plotted back down onto the road such that the lane area is identified clearly.
 
-I implemented this step in lines 243 through 252 in my code in `AdvancedLaneFinding.py` in the function `process()` of the `LaneFinder` class.  Here is an example of my result on a test image:
+I implemented this step in lines 243 through 252 in my code in `AdvancedLaneFinding.py` in the function `process()` of the `LaneFinder` class.  Here is an example of my result on the test image:
 
 ![alt text][image13]
 
@@ -225,10 +225,10 @@ Result videos:
 
 #### 1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
 
-The current solution works well for the project video, but the environmental conditions (roads, lighting conditions, lane markings) in the project video are excellent, so the lanes are relatively easy to detect.
+The current solution works well for the project video, but the environmental conditions (roadway texture, lighting conditions, lane markings) in the project video are excellent, so the lanes are relatively easy to detect.
 
 The Challence video is a bit more difficult, here are some shadow throws and longitudinal stripes that run parallel to the lanes, which make the lane detection much more difficult. Although the current solution works quite passably, there are already some outliers.
 
-I think the real life is like the harder challenge video. There are extremely many shadow throws here. Often one of the two lanes is in extreme brightness, while the other lane is in the shade. There are also numerous tight curves and gradients.
+I think the real life is like the harder challenge video. There are extremely many shadow throws here. Often one of the two lanes is under extreme sunlight, while the other lane is in the shade. There are also numerous tight curves and gradients.
 
-I think it is a challenge to create suitable binary images that are still reliable for lane detection even in the difficult lighting conditions.
+In order to adapt the current solution to the real conditions, I will analyze as many pictures of extreme situations as possible and try to generate suitable binary images.
