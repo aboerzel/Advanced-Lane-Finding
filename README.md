@@ -231,4 +231,4 @@ The Challence video is a bit more difficult, here are some shadow throws and lon
 
 I think the real life is like the harder challenge video. There are extremely many shadow throws here. Often one of the two lanes is under extreme sunlight, while the other lane is in the shade. There are also numerous tight curves and gradients.
 
-In order to adapt the current solution to the real conditions, I will analyze as many pictures of extreme situations as possible and try to generate suitable binary images.
+In order to adapt the current solution to the real life conditions, I will analyze as many pictures of extreme situations as possible and try to generate suitable binary images.
